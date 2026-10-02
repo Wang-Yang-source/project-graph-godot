@@ -2,7 +2,9 @@
 ; Build the Godot export first, then run this script from packaging/windows.
 
 #define AppName "Project Graph"
-#define AppVersion "1.0.0"
+#ifndef AppVersion
+#define AppVersion "0.1.21"
+#endif
 #define AppPublisher "Project Graph"
 #define AppExeName "Project Graph.exe"
 #define ExportDir "..\\..\\builds\\windows"
@@ -20,7 +22,8 @@ Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
-ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#AppExeName}
 ; Add an .ico here when branding artwork is ready.
 ; SetupIconFile=assets\project-graph.ico
@@ -42,7 +45,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: 
 Root: HKCU; Subkey: "Software\Classes\.prg"; ValueType: string; ValueName: ""; ValueData: "ProjectGraph.Document"; Flags: uninsdeletevalue
 Root: HKCU; Subkey: "Software\Classes\ProjectGraph.Document"; ValueType: string; ValueName: ""; ValueData: "Project Graph 文档"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\ProjectGraph.Document\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#AppExeName},0"
-Root: HKCU; Subkey: "Software\Classes\ProjectGraph.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: "\"{app}\{#AppExeName}\" \"%1\""
+Root: HKCU; Subkey: "Software\Classes\ProjectGraph.Document\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#AppExeName}"" ""%1"""
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "启动 {#AppName}"; Flags: nowait postinstall skipifsilent
