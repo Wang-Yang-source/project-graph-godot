@@ -203,6 +203,11 @@ func _collect_stage_objects(node: Node, result: Array[StageObject]) -> void:
 
 
 func _get_collision_geometry(stage_object: StageObject) -> PackedVector2Array:
+	if _is_expanded_container(stage_object):
+		var container := stage_object as TextNode
+		var geometry := _get_polygon_segments(container.get_visual_outline())
+		geometry.append_array(_get_polygon_segments(_get_container_title_polygon(container)))
+		return container.global_transform * geometry
 	for child in stage_object.get_children():
 		if child is CollisionShape2D and not child.disabled and child.shape != null:
 			var geometry := _get_shape_geometry(child)
@@ -356,7 +361,22 @@ func _get_history() -> History:
 
 
 # 以下反馈均为临时节点，不进入舞台对象注册表或历史快照。
+# Expanded containers expose their outline and title to cutting, while their
+# full rectangle remains available to physics. Overview cards stay solid.
+func _is_expanded_container(stage_object: StageObject) -> bool:
+	if not stage_object is TextNode or not stage_object._container_active:
+		return false
+	return not (target_root is Stage and target_root.group_overview.is_active(stage_object))
+
+
+func _get_container_title_polygon(container: TextNode) -> PackedVector2Array:
+	return _get_rectangle_points(container.label.size, container.label.position + container.label.size / 2.0)
+
+
 func _get_solid_polygon(stage_object: StageObject) -> PackedVector2Array:
+	if _is_expanded_container(stage_object):
+		var container := stage_object as TextNode
+		return container.global_transform * _get_container_title_polygon(container)
 	for child in stage_object.get_children():
 		if not child is CollisionShape2D or child.disabled or child.shape == null:
 			continue
