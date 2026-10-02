@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="720" height="460" viewBox="0 0 720 460">
+<defs>
+ <linearGradient id="bg" x2="1" y2="1"><stop stop-color="#faf9ff"/><stop offset="1" stop-color="#edf5f5"/></linearGradient>
+ <radialGradient id="glow"><stop stop-color="#d5c8fc" stop-opacity=".5"/><stop offset="1" stop-color="#d5c8fc" stop-opacity="0"/></radialGradient>
+ <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="10"/></filter>
+</defs>
+<rect width="720" height="460" fill="url(#bg)"/>
+<ellipse cx="90" cy="80" rx="250" ry="210" fill="url(#glow)"/>
+<ellipse cx="660" cy="430" rx="270" ry="230" fill="url(#glow)" opacity=".55"/>
+<g fill="none" stroke="#d3dce6" stroke-width="1.2" opacity=".5">
+ <path d="M555 35L603 59L653 29M603 59L640 97L698 68M640 97L679 130"/>
+ <circle cx="555" cy="35" r="4"/><circle cx="603" cy="59" r="5"/><circle cx="653" cy="29" r="4"/><circle cx="640" cy="97" r="5"/><circle cx="698" cy="68" r="4"/><circle cx="679" cy="130" r="4"/>
+</g>
+<text x="52" y="56" font-family="DejaVu Sans" font-size="11" font-weight="bold" letter-spacing="3" fill="#77758b">IDEAS, CONNECTED.</text>
+<text x="50" y="103" font-family="DejaVu Sans" font-size="34" font-weight="bold" letter-spacing="-1.1" fill="#29283d">Project Graph</text>
+<text x="52" y="133" font-family="Noto Sans CJK SC, sans-serif" font-size="14" fill="#6f7184">让想法自由连接。</text>
+<g fill="#9695b6" opacity=".12" filter="url(#shadow)">
+ <rect x="122" y="185" width="156" height="148" rx="30"/><rect x="442" y="185" width="156" height="148" rx="30"/>
+</g>
+<g fill="#ffffff" fill-opacity=".72" stroke="#ffffff" stroke-width="1.5">
+ <rect x="122" y="172" width="156" height="158" rx="30"/><rect x="442" y="172" width="156" height="158" rx="30"/>
+</g>
+<g fill="none" stroke="#9381bb" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+ <path d="M315 248H400M386 234L400 248L386 262"/>
+</g>
+<text x="360" y="367" text-anchor="middle" font-family="Noto Sans CJK SC, sans-serif" font-size="17" font-weight="500" fill="#343347">拖入 Applications，即可安装</text>
+<text x="360" y="393" text-anchor="middle" font-family="DejaVu Sans" font-size="12" fill="#737587">Drag Project Graph to Applications to install.</text>
+<path d="M52 418H668" stroke="#dfe3ec"/>
+<text x="52" y="441" font-family="DejaVu Sans" font-size="10" fill="#9294a4">PROJECT GRAPH</text>
+<text x="668" y="441" text-anchor="end" font-family="DejaVu Sans" font-size="10" fill="#9294a4">macOS  ·  Apple Silicon + Intel</text>
+</svg>
