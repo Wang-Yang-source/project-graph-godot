@@ -44,8 +44,12 @@ func _queue_layout() -> void:
 
 
 func _fit_to_parent() -> void:
-	var available: Vector2 = get_parent().size
+	var content_top := 0.0
+	var header := get_node_or_null("../../VBoxContainer/Header") as Control
+	if header != null:
+		content_top = header.get_global_rect().end.y - get_parent().global_position.y
+	var available: Vector2 = get_parent().size - Vector2(0.0, content_top)
 	var horizontal_margin := minf(24.0, maxf(8.0, available.x * 0.05))
 	var width := minf(preferred_width, maxf(0.0, available.x - horizontal_margin * 2.0))
 	size = Vector2(width, 0.0)
-	position = ((available - size) * 0.5).round()
+	position = (Vector2(0.0, content_top) + (available - size) * 0.5).round()

@@ -169,7 +169,9 @@ func _ready() -> void:
 	_apply_preferences()
 	_startup_mark("main.ready.dialogs_and_preferences", phase_started)
 	phase_started = Time.get_ticks_usec()
+	$UIOverlay/Welcome.visibility_changed.connect(_sync_welcome_workspace)
 	$UIOverlay/Welcome.visible = bool(GraphPreferences.value("welcome"))
+	_sync_welcome_workspace()
 	_refresh_recent()
 	_on_tab_changed(tabs.current_tab)
 	_startup_mark("main.ready.recent_and_current_tab", phase_started)
@@ -413,6 +415,20 @@ func _available(command: String) -> bool:
 	if command in ["exportSvgAll", "exportPngLegacy", "printFile"]:
 		return stage != null and not stage.stage_objects().is_empty()
 	return true
+
+
+func _sync_welcome_workspace() -> void:
+	var show_stage: bool = not $UIOverlay/Welcome.visible
+	if not show_stage:
+		var stage: Stage = tabs.get_current_stage()
+		if stage != null:
+			stage.finish_text_editing()
+			stage.finish_interaction()
+			stage.get_viewport().gui_release_focus()
+	tabs.visible = show_stage
+	var classroom := bool(GraphPreferences.value("classroom"))
+	$DockAutoHide.set_available(show_stage and not classroom, show_stage and bool(GraphPreferences.value("quick")) and not classroom)
+	$UIOverlay/Status.visible = show_stage and not classroom
 
 
 func _setup_buttons() -> void:
@@ -928,8 +944,7 @@ func _apply_preferences(changed_key: String = "", theme_override: String = "") -
 			_panel("SettingsWindow").get_node("Tabs/Appearance/Theme").select(_theme_option_index(selected_theme))
 		_loading_settings = false
 		return
-	$DockAutoHide.set_available(not bool(GraphPreferences.value("classroom")), bool(GraphPreferences.value("quick")) and not bool(GraphPreferences.value("classroom")))
-	$UIOverlay/Status.visible = not bool(GraphPreferences.value("classroom"))
+	_sync_welcome_workspace()
 	$UIOverlay/PrivacyCover.visible = bool(GraphPreferences.value("privacy"))
 	for stage in tabs.stages():
 		stage.apply_preferences()
@@ -1082,6 +1097,8 @@ func _input(event: InputEvent) -> void:
 			for name in _window_ready:
 				if _window_ready[name].visible:
 					return
+		if $UIOverlay/Welcome.visible and command not in ["newDraft", "openFile", "commands", "toggleFullscreen", "clickAppMenuSettingsButton"]:
+			return
 		_run(command)
 		get_viewport().set_input_as_handled()
 		return
@@ -1874,7 +1891,7 @@ func _update_color_input() -> bool:
 # A SubViewport editor and the root toolbar can both own GUI focus.
 # Deliver text keys before root GUI navigation moves focus to window controls.
 func _forward_canvas_text_key(event: InputEvent) -> bool:
-	if not event is InputEventKey:
+	if $UIOverlay/Welcome.visible or not event is InputEventKey:
 		return false
 	var stage: Stage = tabs.get_current_stage()
 	if stage == null:
