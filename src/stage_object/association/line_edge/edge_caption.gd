@@ -149,7 +149,8 @@ func _update_style() -> void:
 	editor.add_theme_color_override("font_color", foreground)
 	editor.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
 	editor.add_theme_color_override("caret_color", foreground)
-	editor.add_theme_color_override("selection_color", Palette.color(light, "surface.selected"))
+	editor.add_theme_color_override("selection_color", Color(foreground, 0.18))
+	editor.add_theme_color_override("font_selected_color", foreground)
 	if is_instance_valid(edge.source) and edge.source is TextNode:
 		var font: Font = edge.source.label.get_theme_font("font")
 		label.add_theme_font_override("font", font)
