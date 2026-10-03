@@ -155,15 +155,15 @@ func _gui_input(event: InputEvent) -> void:
 func align_with_label(label: Label, value: String, include_native := false) -> void:
 	var label_style := label.get_theme_stylebox("normal")
 	var style := get_theme_stylebox("normal").duplicate() as StyleBoxFlat
-	var content := label.size - label_style.get_minimum_size()
 	var metrics := measure_unwrapped(value, include_native)
-	var rows := maxi(1, value.split("\n").size())
-	var inset_x := maxf(0.0, (content.x - metrics.x) * 0.5) if rows == 1 else 0.0
+	var glyph := label.get_character_bounds(0)
 	var font := label.get_theme_font("font")
-	var text_height := font.get_height(label.get_theme_font_size("font_size")) * rows
-	style.content_margin_left = label_style.get_content_margin(SIDE_LEFT) + inset_x
+	# Reuse Label's native layout, including alignment and asymmetric margins.
+	# TextEdit centers glyphs in its taller line box; compensate for that leading.
+	var leading := floorf((get_line_height() - font.get_height(label.get_theme_font_size("font_size"))) * 0.5)
+	style.content_margin_left = glyph.position.x if not value.is_empty() else label_style.get_content_margin(SIDE_LEFT)
 	style.content_margin_right = maxf(0.0, label_style.get_content_margin(SIDE_RIGHT) - 2.0)
-	style.content_margin_top = label_style.get_content_margin(SIDE_TOP) + maxf(0.0, (content.y - text_height) * 0.5)
+	style.content_margin_top = maxf(0.0, glyph.position.y - leading) if not value.is_empty() else label_style.get_content_margin(SIDE_TOP)
 	style.content_margin_bottom = maxf(0.0, minf(label_style.get_content_margin(SIDE_BOTTOM), label.size.y - style.content_margin_top - metrics.y))
 	add_theme_stylebox_override("normal", style)
 
