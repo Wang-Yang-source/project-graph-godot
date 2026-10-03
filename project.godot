@@ -18,6 +18,8 @@ MCPRuntimeProbe="*res://addons/godot_mcp/runtime/mcp_runtime_probe.gd"
 
 [display]
 
+window/vsync/vsync_mode.linuxbsd=3
+
 window/size/borderless=true
 window/stretch/mode="canvas_items"
 window/per_pixel_transparency/allowed=true
@@ -365,6 +367,8 @@ history_redo={
 2d/icon="uid://bxfj8cpdlgdoa"
 
 [rendering]
+
+renderer/rendering_method.linuxbsd="mobile"
 
 rendering_device/driver.windows="d3d12"
 renderer/rendering_method="gl_compatibility"
