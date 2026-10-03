@@ -77,6 +77,27 @@ func _run() -> void:
 			stage.camera.force_update_scroll()
 			border._process(0.0)
 			check(border.points == baked, "Sub-bucket zoom reuses identical rounded geometry")
+		# Camera translation must reuse border geometry without a process callback.
+		stage.camera.force_update_scroll()
+		stage._process(0.0)
+		border._process(0.0)
+		var view_steps := log(maxf(stage.get_global_transform_with_canvas().get_scale().x, .01)) / log(2.0) * 16.0
+		var in_view := stage.world_view_rect.grow(64.0 / stage.camera.zoom.x)
+		border._on_view_changed(in_view, view_steps)
+		check(not border.is_processing(), "Same view bucket does not wake settled border")
+		border._on_view_changed(Rect2(in_view.position + Vector2(1, 1), in_view.size), view_steps)
+		check(not border.is_processing(), "Pure panning does not wake settled border")
+		border._on_view_changed(in_view, view_steps + 2.0)
+		check(border.is_processing(), "Zoom bucket changes wake border")
+		border._process(0.0)
+		border._on_view_changed(Rect2(Vector2(100000, 100000), Vector2(100, 100)), view_steps)
+		check(not border.is_processing(), "Leaving the viewport keeps border asleep")
+		border._on_view_changed(in_view, view_steps)
+		check(border.is_processing(), "Re-entering the viewport wakes border")
+		border._process(0.0)
+		border._queue_refresh()
+		check(border.is_processing(), "Geometry and theme edits invalidate view cache")
+		border._process(0.0)
 		var cache_key: Array = border._refresh_key.duplicate()
 		node.visibility_layer = 0
 		stage.camera.zoom = Vector2.ONE * .25

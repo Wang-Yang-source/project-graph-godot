@@ -9,6 +9,12 @@ const MIN_GROUP_SCREEN_RADIUS := 10.0
 @onready var _control: Control = get_parent() as Control
 var _refresh_key: Array = []
 var _event_driven := false
+var _stage: Node2D
+var _view_bounds := Rect2()
+var _view_cache_valid := false
+var _in_view := false
+var _view_bucket := -2147483648
+var _zoom_step_offset := 0.0
 var _bucket_offset := 0.0
 var _basis_key := Transform2D.IDENTITY
 var _outline_key: Array = []
@@ -32,19 +38,42 @@ func _ready() -> void:
 			ancestor.connect("geometry_changed", _queue_refresh)
 			_bucket_offset = float(posmod(str(ancestor.get("id")).hash(), 16)) / 16.0
 		if ancestor.has_signal("view_changed"):
-			ancestor.connect("view_changed", _queue_refresh)
+			ancestor.connect("view_changed", _on_view_changed)
+			_stage = ancestor as Node2D
 			_event_driven = true
 			break
 		ancestor = ancestor.get_parent()
 
 
 func _queue_refresh(_world_rect: Rect2 = Rect2(), _zoom_steps: float = 0.0) -> void:
+	_view_cache_valid = false
 	set_process(true)
+
+
+func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
+	if not _view_cache_valid:
+		set_process(true)
+		return
+	var was_in_view := _in_view
+	_in_view = world_rect.intersects(_view_bounds, true)
+	# Panning moves the canvas, not the baked border. Wake only on entry or
+	# when its existing per-octave sampling bucket changes.
+	if _in_view and (not was_in_view or floori(zoom_steps + _zoom_step_offset) != _view_bucket):
+		set_process(true)
 
 
 func _process(_delta: float) -> void:
 	if _event_driven:
 		set_process(false)
+	if _stage != null:
+		_view_bounds = _control.get_global_transform() * Rect2(Vector2.ZERO, _control.size)
+		var scale_transform := get_viewport().get_final_transform() * _control.get_global_transform_with_canvas()
+		var scale_value := maxf(minf(scale_transform.x.length(), scale_transform.y.length()), .01)
+		var stage_scale := maxf(_stage.get_global_transform_with_canvas().get_scale().x, .01)
+		_zoom_step_offset = log(scale_value / stage_scale) / log(2.0) * 16.0 + _bucket_offset
+		_view_bucket = floori(log(scale_value) / log(2.0) * 16.0 + _bucket_offset)
+		_in_view = (_stage.get("world_view_rect") as Rect2).grow(64.0 / stage_scale).intersects(_view_bounds, true)
+		_view_cache_valid = true
 	var ancestor: CanvasItem = _control
 	while ancestor != null:
 		if ancestor.visibility_layer & get_viewport().canvas_cull_mask == 0:
