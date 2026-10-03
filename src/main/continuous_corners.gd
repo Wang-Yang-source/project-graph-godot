@@ -3,6 +3,7 @@ extends RefCounted
 const CONTROL := 12.0
 const NODE := 18.0
 const PANEL := 24.0
+const MAX_CANVAS_TEXTURE_SIZE := 512.0
 const SOURCE_META := &"continuous_corner_source"
 const CURVE := [
 	Vector2(0, 0), Vector2(0.34, 0), Vector2(0.587401052, 0),
@@ -97,7 +98,9 @@ static func style(original: StyleBoxFlat, radius: float, mipmapped: bool = false
 		svg += "</svg>"
 		if mipmapped:
 			var image := Image.new()
-			if image.load_svg_from_string(svg, 4.0) != OK:
+			# Large world-space corners at tiny zooms only occupy a few screen pixels.
+			var raster_scale := minf(4.0, MAX_CANVAS_TEXTURE_SIZE / extent)
+			if image.load_svg_from_string(svg, raster_scale) != OK:
 				return flat
 			image.fix_alpha_edges()
 			image.generate_mipmaps()
@@ -109,7 +112,7 @@ static func style(original: StyleBoxFlat, radius: float, mipmapped: bool = false
 			scalable.fix_alpha_border = true
 			texture = scalable
 		if _textures.size() >= 256:
-			_textures.clear()
+			_textures.erase(_textures.keys()[0])
 		_textures[key] = texture
 	var result := StyleBoxTexture.new()
 	result.texture = texture
