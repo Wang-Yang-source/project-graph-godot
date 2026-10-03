@@ -109,15 +109,33 @@ var _startup_theme_done := false
 var _startup_documents_done := false
 var _system_theme_light := false
 var _system_theme_poll := 0.0
+var _document_instance: Node
+var _external_open_queue: Array[PackedStringArray] = []
+var _opening_external := false
 
 
 func _enter_tree() -> void:
+	if not OS.has_feature("web") and DisplayServer.get_name() != "headless" and not OS.get_cmdline_user_args().has("--new-window"):
+		_document_instance = get_tree().root.get_node_or_null("DocumentOpenInstance")
+		if _document_instance == null:
+			_document_instance = preload("res://src/main/single_instance.gd").new()
+			add_child(_document_instance)
+			_document_instance.start(_launch_document_paths())
+		_document_instance.open_requested.connect(_queue_external_documents)
+		_document_instance.forwarding_finished.connect(_on_documents_forwarded)
+		for paths in _document_instance.pending.duplicate():
+			_queue_external_documents(paths)
+		if _document_instance.secondary:
+			get_window().mode = Window.MODE_MINIMIZED
+			return
 	_startup_mark("main.enter_tree.before_children_ready")
 	# 子控件第一次排版就使用最终字体，避免先生成旧字体缓存再全部失效。
 	theme.default_font = preload("res://assets/fonts/PingFang-SC-Regular.ttf")
 
 
 func _ready() -> void:
+	if _is_forwarding_documents():
+		return
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
 	var ready_started := Time.get_ticks_usec()
 	var phase_started := ready_started
@@ -1131,6 +1149,8 @@ func _update_text_input_gate() -> void:
 
 
 func _process(delta: float) -> void:
+	if _is_forwarding_documents():
+		return
 	_system_theme_poll += delta
 	if _system_theme_poll >= 1.0:
 		_system_theme_poll = 0.0
@@ -1814,15 +1834,55 @@ func _apply_theme_button(light: bool) -> void:
 	_local_theme.apply_control($VBoxContainer/Header/ThemeMode, light)
 
 
+func _launch_document_paths() -> PackedStringArray:
+	return preload("res://src/main/single_instance.gd").document_paths()
+
+
+func _is_forwarding_documents() -> bool:
+	return _document_instance != null and _document_instance.secondary
+
+
+func _on_documents_forwarded(ok: bool) -> void:
+	# Let child startup coroutines finish before disposing the short-lived process.
+	for frame in 3:
+		await get_tree().process_frame
+	if not ok:
+		OS.alert("无法将文件交给已有窗口，请关闭无响应的窗口后重试。", "Project Graph")
+	get_tree().quit(0 if ok else 1)
+
+
+func _queue_external_documents(paths: PackedStringArray) -> void:
+	_external_open_queue.append(paths)
+	if _document_instance != null:
+		_document_instance.pending.clear()
+	_drain_external_documents.call_deferred()
+
+
+func _drain_external_documents() -> void:
+	if _opening_external:
+		return
+	_opening_external = true
+	while not _startup_documents_done:
+		await get_tree().process_frame
+	while not _external_open_queue.is_empty():
+		await _open_document_paths(_external_open_queue.pop_front())
+	if get_window().mode == Window.MODE_MINIMIZED:
+		get_window().mode = Window.MODE_WINDOWED
+	get_window().grab_focus()
+	_opening_external = false
+
+
 func _open_launch_documents() -> void:
-	# 安装器的 desktop 入口用 -- 分隔文档参数，路径逐项传递，支持中文与空格。
+	await _open_document_paths(_launch_document_paths())
+
+
+func _open_document_paths(requested: PackedStringArray) -> void:
 	var paths := PackedStringArray()
-	for argument in OS.get_cmdline_user_args():
-		if argument.get_extension().to_lower() == "prg":
-			if FileAccess.file_exists(argument):
-				paths.append(argument)
-			else:
-				_show_error("找不到项目文件：" + argument)
+	for path in requested:
+		if FileAccess.file_exists(path):
+			paths.append(path)
+		else:
+			_show_error("找不到项目文件：" + path)
 	if paths.is_empty():
 		return
 	$UIOverlay/Welcome.hide()
@@ -1911,3 +1971,8 @@ func _forward_canvas_text_key(event: InputEvent) -> bool:
 	viewport.push_input(event, true)
 	get_viewport().set_input_as_handled()
 	return true
+
+
+func _exit_tree() -> void:
+	if is_instance_valid(_document_instance) and _document_instance.get_parent() != self:
+		_document_instance.queue_free()

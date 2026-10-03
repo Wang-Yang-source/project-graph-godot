@@ -14,9 +14,30 @@ var _light := false
 
 var _transition_started := false
 var _load_requested := false
+var _forwarding := false
+
+
+func _enter_tree() -> void:
+	if OS.has_feature("web") or DisplayServer.get_name() == "headless" or OS.get_cmdline_user_args().has("--new-window"):
+		return
+	var instance := preload("res://src/main/single_instance.gd").new()
+	instance.name = "DocumentOpenInstance"
+	get_tree().root.add_child.call_deferred(instance)
+	instance.start(instance.document_paths())
+	_forwarding = instance.secondary
+	if _forwarding:
+		get_window().mode = Window.MODE_MINIMIZED
+		instance.forwarding_finished.connect(func(ok: bool):
+			if not ok:
+				OS.alert("无法将文件交给已有窗口，请关闭无响应的窗口后重试。", "Project Graph")
+			get_tree().quit(0 if ok else 1)
+		)
 
 
 func _ready() -> void:
+	if _forwarding:
+		hide()
+		return
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_light = Palette.is_light(str(GraphPreferences.value("theme")))
 	background.color = Palette.color(_light, "surface.app")

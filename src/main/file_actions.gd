@@ -97,6 +97,7 @@ func run(command: String) -> void:
 			var arguments := PackedStringArray()
 			if OS.has_feature("editor"):
 				arguments = PackedStringArray(["--path", ProjectSettings.globalize_path("res://")])
+			arguments.append_array(PackedStringArray(["--", "--new-window"]))
 			if OS.create_instance(arguments) == -1:
 				app._show_error("无法新建窗口。")
 		"openFolder":
