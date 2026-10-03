@@ -239,7 +239,7 @@ func _update_marquee() -> void:
 	line.texture = preload("res://assets/line_antialiasing.res")
 	line.texture_mode = Line2D.LINE_TEXTURE_TILE
 	line.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
-	var corners := PackedVector2Array([rect.position, Vector2(rect.end.x, rect.position.y), rect.end, Vector2(rect.position.x, rect.end.y)])
+	var corners := preload("res://src/main/continuous_corners.gd").outline(rect, preload("res://src/main/continuous_corners.gd").NODE)
 	line.points = line.global_transform.affine_inverse() * corners
 	line.show()
 

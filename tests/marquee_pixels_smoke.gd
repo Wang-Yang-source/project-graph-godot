@@ -21,9 +21,9 @@ func _run() -> void:
 			var start := Vector2(120, 110) + Vector2.ONE * phase
 			var end := Vector2(420, 290) + Vector2.ONE * phase
 			var container := view.get_parent() as Control
-			var screen := container.get_global_transform_with_canvas() * (end * container.size / Vector2(view.size))
+			var screen := container.get_global_transform_with_canvas() * (view.get_final_transform() * end)
 			root.grab_focus()
-			Input.warp_mouse(screen)
+			Input.warp_mouse(root.get_final_transform() * screen)
 			var motion := InputEventMouseMotion.new()
 			motion.position = end
 			view.push_input(motion, true)
@@ -33,15 +33,23 @@ func _run() -> void:
 			stage._update_marquee()
 			await RenderingServer.frame_post_draw
 			var pixels := view.get_texture().get_image()
-			check(line.closed and line.points.size() == 4, "Marquee remains a closed four-corner rectangle")
+			check(line.closed and line.points.size() > 4, "Marquee uses the shared continuous corner outline")
 			var corners := PackedVector2Array()
 			for point in line.points:
-				corners.append(line.get_global_transform_with_canvas() * point)
-			check(corners[0].distance_to(start) < 1.0 and corners[2].distance_to(end) < 1.5, "Marquee corners follow the pointer in viewport pixels")
+				corners.append(view.get_final_transform() * line.get_global_transform_with_canvas() * point)
+			var bounds := Rect2(corners[0], Vector2.ZERO)
+			for point in corners:
+				bounds = bounds.expand(point)
+			check(bounds.position.distance_to(view.get_final_transform() * start) < 1.0 and bounds.end.distance_to(view.get_final_transform() * end) < 1.5, "Rounded marquee bounds follow the pointer in viewport pixels")
+			check(not corners.has(view.get_final_transform() * start), "Marquee excludes the square corner")
+			var world_rect := Rect2(stage._marquee_start, stage.get_global_mouse_position() - stage._marquee_start).abs()
+			var expected := preload("res://src/main/continuous_corners.gd").outline(world_rect, preload("res://src/main/continuous_corners.gd").NODE)
+			for index in expected.size():
+				check(line.to_global(line.points[index]).distance_to(expected[index]) < 0.05, "Marquee matches node corner geometry")
 			var missing := 0
-			for side in 4:
-				for step in range(1, 20):
-					var point := corners[side].lerp(corners[(side + 1) % 4], float(step) / 20.0)
+			for side in corners.size():
+				for step in [0.5]:
+					var point := corners[side].lerp(corners[(side + 1) % corners.size()], step)
 					var coverage := 0.0
 					for x in range(maxi(0, floori(point.x) - 3), mini(pixels.get_width(), ceili(point.x) + 4)):
 						for y in range(maxi(0, floori(point.y) - 3), mini(pixels.get_height(), ceili(point.y) + 4)):
