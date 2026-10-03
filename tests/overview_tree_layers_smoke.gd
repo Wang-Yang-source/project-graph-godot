@@ -63,6 +63,13 @@ func _run() -> void:
 	await settle()
 	check(overview._native_previews[frame.get_instance_id()].image.visible and overview._native_previews[frame.get_instance_id()].image.texture == cached, "Panning back restores the same cached texture")
 	check(overview._preview_links.is_empty(), "Native edges are not duplicated by aggregated links")
+	await zoom_to(.2)
+	check(overview._native_previews.has(frame.get_instance_id()), "Large screen overview remains cached")
+	if overview._native_previews.has(frame.get_instance_id()):
+		var large_texture: Texture2D = overview._native_previews[frame.get_instance_id()].image.texture
+		check(maxi(large_texture.get_width(), large_texture.get_height()) > 512, "Large previews increase cache resolution instead of enlarging a 512-pixel image")
+		await zoom_to(.08)
+		check(overview._native_previews[frame.get_instance_id()].image.texture == large_texture, "Zooming back retains the sharper cache")
 	await zoom_to(2.0)
 	for entity in [frame, branch, child, leaf, chain, chain_child]:
 		check(entity.label.visible_characters == -1 and not overview.is_hidden(entity), "Zoom in restores original glyphs and picking")

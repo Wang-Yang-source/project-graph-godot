@@ -52,6 +52,7 @@ var _overlap_hidden: Array[Panel] = []
 var _miniatures := {}
 var _native_previews := {}
 var _native_preview_key: Array = []
+var _native_resolutions := {}
 
 
 func _ready() -> void:
@@ -439,7 +440,17 @@ func _update_native_previews() -> void:
 	for identifier in _preview_roots:
 		if _miniatures.has(identifier):
 			roots.append(identifier)
-	var key := [_layout_revision, stage.document_revision, roots]
+	var resolutions := []
+	for identifier in roots:
+		var bounds: Rect2 = _group_rects[identifier]
+		var pixels := maxf(bounds.size.x, bounds.size.y) * _frame_scale
+		var requested := clampi(int(pow(2.0, ceilf(log(maxf(pixels * 2.0, 512.0)) / log(2.0)))), 512, 4096)
+		_native_resolutions[identifier] = maxi(int(_native_resolutions.get(identifier, 512)), requested)
+		resolutions.append(_native_resolutions[identifier])
+	for identifier in _native_resolutions.keys():
+		if not roots.has(identifier):
+			_native_resolutions.erase(identifier)
+	var key := [_layout_revision, stage.document_revision, roots, resolutions]
 	if key != _native_preview_key:
 		_native_preview_key = key
 		for identifier in _native_previews:
@@ -449,7 +460,7 @@ func _update_native_previews() -> void:
 		_native_previews.clear()
 		for identifier in roots:
 			var rect: Rect2 = _group_rects[identifier]
-			var factor := 512.0 / maxf(rect.size.x, rect.size.y)
+			var factor := float(_native_resolutions[identifier]) / maxf(rect.size.x, rect.size.y)
 			var view := SubViewport.new()
 			view.name = "NativeGroupCache"
 			view.disable_3d = true
@@ -471,7 +482,7 @@ func _update_native_previews() -> void:
 					var native_style := Corners.source(control.get_theme_stylebox("panel" if object._container_active else "normal"))
 					if native_style != null:
 						var style := native_style.duplicate() as StyleBoxFlat
-						style.set_border_width_all(maxi(style.border_width_top, ceili(2.0 / factor)))
+						style.set_border_width_all(maxi(style.border_width_top, ceili(1.25 / _frame_scale)))
 						body.add_theme_stylebox_override("panel", style)
 					view.add_child(body)
 					body.position = control.global_position
@@ -484,9 +495,9 @@ func _update_native_previews() -> void:
 					var to := LineEdge.connection_rect(object.target, object.source)
 					var anchors := LineEdge.connection_uvs(from, to)
 					var head_length := LineEdge.arrow_length(from, to, anchors, object.stroke_width) if object.show_arrow else 0.0
-					line.points = LineEdge.connection_curve(from, to, anchors, object.curve_segments, head_length, true)
+					line.points = LineEdge.connection_curve(from, to, anchors, maxi(48, object.curve_segments * 2), head_length, true)
 					line.default_color = object.display_stroke_color()
-					line.width = maxf(object.stroke_width, 2.0 / factor)
+					line.width = maxf(object.stroke_width, 1.25 / _frame_scale)
 					line.antialiased = true
 					line.z_index = 1
 					view.add_child(line)
@@ -729,12 +740,12 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		title_area = Rect2((header.position - rect.position) * pixel_scale, header.size * pixel_scale)
 		# Give the group heading a readable strip, never the whole group body.
 		title_area.size.y = minf(panel.size.y * .2,
-			maxf(title_area.size.y, DETAIL_TITLE_PIXELS * pixel_scale / sampling_ceiling))
+			maxf(title_area.size.y, 14.0 * measured.y / TITLE_FONT_SIZE / .9 * pixel_scale / sampling_ceiling))
 	var fit := minf(title_area.size.x / maxf(measured.x, .0001),
 		title_area.size.y / maxf(measured.y, .0001)) * .9
 	var desired := float(group.font_size) * pixel_scale
 	if covered:
-		desired = maxf(desired, DETAIL_TITLE_PIXELS * pixel_scale / sampling_ceiling)
+		desired = maxf(desired, 14.0 * pixel_scale / sampling_ceiling)
 	desired = minf(desired, minf(fit * TITLE_FONT_SIZE, MAX_SUMMARY_TITLE_PIXELS * pixel_scale / sampling_ceiling))
 	var factor := maxf(desired, 0.0) / TITLE_FONT_SIZE
 	title.visible = not text.strip_edges().is_empty() and desired * scale / pixel_scale >= 5.0
