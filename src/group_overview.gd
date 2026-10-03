@@ -8,6 +8,9 @@ extends Node2D
 const Corners = preload("res://src/main/continuous_corners.gd")
 const Palette = preload("res://src/main/theme_palette.gd")
 const TITLE_FONT_SIZE := 100
+# Physical screen pixels: switch hierarchy before ordinary text becomes unreadable.
+const DETAIL_TITLE_PIXELS := 12.0
+const MAX_SUMMARY_TITLE_PIXELS := 24.0
 static var _summary_font: FontFile
 
 @onready var _template: Panel = $SummaryTemplate
@@ -125,13 +128,14 @@ func refresh() -> void:
 			_build_preview_tree()
 			_membership_key.clear()
 		_refresh_preview_rects()
-	var gate_input_key := [stage.layout_revision, stage.document_revision, viewport_size, camera_scale_threshold, viewport_size_ratio]
+	var display_scale := snappedf(_frame_scale / maxf(camera.zoom.x, .0001), .0001)
+	var gate_input_key := [stage.layout_revision, stage.document_revision, viewport_size, display_scale, camera_scale_threshold, viewport_size_ratio]
 	if gate_input_key != _gate_input_key:
 		_gate_input_key = gate_input_key
 		var sizes := []
 		for group in _groups:
 			sizes.append([group.get_instance_id(), _group_rects[group.get_instance_id()].size, group.font_size, group.text.strip_edges().is_empty()])
-		var gate_key := [sizes, viewport_size, camera_scale_threshold, viewport_size_ratio]
+		var gate_key := [sizes, stage.layout_revision, stage.document_revision, viewport_size, display_scale, camera_scale_threshold, viewport_size_ratio]
 		if gate_key != _gate_key:
 			_gate_key = gate_key
 			_zoom_gates.clear()
@@ -144,7 +148,16 @@ func refresh() -> void:
 				var limit: float = camera_scale_threshold * camera.REFERENCE_ZOOM
 				var size_gate := side * minf(.75, viewport_size_ratio + .20 * level) / maxf(rect.size.x, rect.size.y)
 				# A large frame must not delay its preview until the header is unreadable.
-				var gate := minf(limit, maxf(size_gate, 18.0 / maxf(group.font_size, 8)))
+				var font_size := INF
+				for child in _preview_children.get(identifier, []):
+					var entity: Entity = _entities[child]
+					if entity is TextNode and not entity.text.strip_edges().is_empty():
+						var relative: Transform2D = stage.global_transform.affine_inverse() * entity.label.get_global_transform()
+						var world_font: float = entity.label.get_theme_font_size("font_size") * relative.get_scale().abs().x
+						font_size = minf(font_size, maxf(world_font, .0001))
+				# Large frames must also collapse when their immediate child text is tiny.
+				var text_gate := DETAIL_TITLE_PIXELS / (font_size * display_scale)
+				var gate := maxf(minf(limit, size_gate), text_gate)
 				_group_gates[identifier] = gate
 				_zoom_gates.append(gate)
 			_zoom_gates.sort()
@@ -409,7 +422,10 @@ func _preview_display_rect(identifier: int) -> Rect2:
 	var object: TextNode = _preview_nodes[identifier]
 	var rect: Rect2 = _group_rects[identifier] if _group_rects.has(identifier) else object.aabb
 	if not _preview_roots.has(identifier) and not object._container_active:
-		return _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
+		var original: Rect2 = _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
+		# Keep immediate leaf titles readable when their original glyph box shrinks.
+		var size := original.size.max(Vector2(48, 24) / _frame_scale)
+		return Rect2(original.get_center() - size * .5, size)
 	if object._container_active:
 		# Match Panel zoom buckets so endpoints follow its exact visible boundary.
 		var scale := _frame_scale
@@ -619,16 +635,19 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	# master getTextSize reports the em size for height, not font line height.
 	var measured := _summary_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, TITLE_FONT_SIZE)
 	var desired := float(group.font_size) * pixel_scale
-	if covered:
+	if covered or desired < DETAIL_TITLE_PIXELS:
 		# Fit the actual font line height; the em size can undercount CJK ascent.
 		var fit := minf(panel.size.x / maxf(measured.x, 0.0001),
 			panel.size.y / maxf(_summary_font.get_height(TITLE_FONT_SIZE), 0.0001)) * .9
-		desired = maxf(0.1, fit * TITLE_FONT_SIZE)
+		desired = maxf(0.1, minf(fit * TITLE_FONT_SIZE, MAX_SUMMARY_TITLE_PIXELS * pixel_scale / (scale * pow(2.0, 1.0 / 16.0))))
 	title.visible = not text.strip_edges().is_empty() and (maxf(screen_size.x, screen_size.y) >= 20.0 if covered else desired > 5.0)
 	var factor := desired / TITLE_FONT_SIZE
 	title.size = Vector2(measured.x, _summary_font.get_height(TITLE_FONT_SIZE))
 	title.scale = Vector2.ONE * factor
 	title.position = (panel.size - title.size * factor) * .5
+	if root and not _preview_children.get(identifier, []).is_empty():
+		# Reserve the body for next-layer titles rather than enlarging the parent over them.
+		title.position.y = minf(title.position.y, 4.0 * pixel_scale / scale)
 	# The direct next-layer preview stays above the parent to preserve requested
 	# readability, while every covered title uses the master fitting formula.
 	var radius := Corners.fitted_radius(panel.size, 14.0 if covered else 6.0, 2.0 if covered else 1.0)
