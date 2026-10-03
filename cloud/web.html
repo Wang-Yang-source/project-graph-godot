@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Graph 云文件测试</title>
+<style>
+:root{color-scheme:light;font-family:system-ui,sans-serif;color:#243047;background:#f3f5fa}*{box-sizing:border-box}body{max-width:920px;margin:48px auto;padding:0 24px}h1{font-size:28px;margin-bottom:8px}p{line-height:1.7;color:#58657a}section{background:white;border:1px solid #dfe5ef;border-radius:16px;padding:24px;margin-top:20px}h2{font-size:18px;margin-top:0}label{display:block;margin:12px 0 5px}input{padding:11px;border:1px solid #b9c4d6;border-radius:8px;width:100%;font:inherit}button{border:0;border-radius:8px;padding:10px 15px;background:#3456d1;color:white;font:inherit;cursor:pointer;margin:8px 8px 0 0}button.secondary{background:#e9eef9;color:#243047}button.danger{background:#f9e8e8;color:#9b2626}button:disabled{opacity:.5;cursor:wait}.tabs{display:flex;gap:8px;flex-wrap:wrap}.tabs button{margin:0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}#status{white-space:pre-wrap;padding:12px;border-radius:8px;background:#e9eef9;min-height:44px;margin-top:20px}#status.error{background:#f9e8e8;color:#9b2626}.file{border-top:1px solid #e1e6ef;padding:16px 0}.file strong{display:block;overflow-wrap:anywhere}.meta{font-size:13px;color:#58657a}.history{margin:10px 0}[hidden]{display:none!important}@media(max-width:600px){body{margin:24px auto;padding:0 16px}.grid{grid-template-columns:1fr}section{padding:18px}}
+</style>
+<h1>Project Graph 云文件</h1>
+<p>测试版 · 邮箱密码登录 · 保存和下载完整 PRG · 保留历史版本</p>
+<section id="account">
+  <div class="tabs"><button type="button" data-mode="login">登录</button><button type="button" class="secondary" data-mode="signup">注册</button><button type="button" class="secondary" data-mode="reset">忘记密码</button></div>
+  <form id="authForm">
+    <label for="email">邮箱</label><input id="email" type="email" required autocomplete="email">
+    <label for="password" id="passwordLabel">密码</label><input id="password" type="password" required autocomplete="current-password">
+    <div id="codeFields" hidden><label for="code">邮件中的 6 位验证码</label><input id="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6"></div>
+    <button id="send" class="secondary" type="button" hidden>发送验证码</button><button id="submit" type="submit">登录</button>
+  </form>
+  <p id="authHint">验证码只用于注册和重置密码。</p>
+</section>
+<section id="workspace" hidden>
+  <h2 id="identity"></h2>
+  <button type="button" id="refreshList" class="secondary">刷新列表</button><button type="button" id="logout" class="secondary">退出登录</button>
+  <form id="uploadForm">
+    <div class="grid"><div><label for="projectName">项目名称</label><input id="projectName" placeholder="例如：我的研究项目" required></div><div><label for="projectFile">PRG 文件（最多 20 MiB）</label><input id="projectFile" type="file" accept=".prg" required></div></div>
+    <button type="submit">上传新项目</button>
+  </form>
+  <p>每个用户最多保存 100 MiB，包含历史版本。更新项目会保留旧版本；版本发生变化时会提示冲突。</p>
+  <div id="files"></div>
+  <input type="file" id="replacement" accept=".prg" hidden>
+</section>
+<div id="status" role="status" aria-live="polite">请先登录，或注册一个测试账号。</div>
+<script>
+let mode='login',session=null,pending=null;
+const $=id=>document.getElementById(id);
+const messages={authentication_failed:'认证失败，请检查密码、验证码或邮箱验证状态。',too_many_requests:'请求过于频繁，请稍后重试。',authentication_unavailable:'认证服务暂时不可用，请稍后重试。',revision_conflict:'云端已有更新，未覆盖文件。请刷新列表并下载最新版本后再决定如何保存。',storage_quota_exceeded:'存储空间不足，历史版本也计入空间。',if_match_revision_required:'缺少版本号，请刷新列表后重试。',prg_requires_current_json_format:'仅支持当前 JSON 格式 PRG；旧版项目请先在编辑器中另存。',unsupported_prg_version:'仅支持版本 3 的 PRG。',invalid_prg_archive:'文件不是有效的 PRG 压缩包。',invalid_prg_json:'PRG 内的 JSON 数据无效。',password_requires_10_characters_and_at_most_72_bytes:'密码至少 10 个字符，UTF-8 编码不超过 72 字节。',invalid_session:'会话已失效，请重新登录。',file_exceeds_20_mib:'文件超过 20 MiB。'};
+function status(text,error=false){$('status').textContent=text;$('status').classList.toggle('error',error)}
+async function request(path,options={},authorized=false){
+ const headers=new Headers(options.headers||{});if(authorized&&session)headers.set('Authorization','Bearer '+session.access_token);
+ const response=await fetch(path,{...options,headers,signal:AbortSignal.timeout(40000)});
+ if(!response.ok){const data=await response.json().catch(()=>({error:'请求失败'}));if(response.status===401&&authorized){session=null;$('workspace').hidden=true;$('account').hidden=false}throw new Error(messages[data.error]||data.error)}
+ return response;
+}
+async function auth(action,data,authorized=false){const response=await request('/v1/auth/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)},authorized);return response.json()}
+async function run(operation){for(const b of document.querySelectorAll('button'))b.disabled=true;try{await operation()}catch(error){status(error.name==='TimeoutError'?'请求超时，请刷新列表确认上传是否已经完成。':error.message,true)}finally{for(const b of document.querySelectorAll('button'))b.disabled=false}}
+function setMode(value){mode=value;$('codeFields').hidden=mode==='login';$('send').hidden=mode==='login';$('submit').textContent={login:'登录',signup:'验证邮箱，完成注册',reset:'验证并设置新密码'}[mode];$('passwordLabel').textContent=mode==='reset'?'新密码':'密码';$('password').autocomplete=mode==='login'?'current-password':'new-password';$('code').required=mode!=='login';$('authHint').textContent=mode==='signup'?'填写邮箱和密码，先发送验证码，再填写验证码完成注册。':mode==='reset'?'先发送重置验证码，再填写验证码及新密码。':'验证码只用于注册和重置密码。';$('code').value=''}
+for(const b of document.querySelectorAll('[data-mode]'))b.onclick=()=>setMode(b.dataset.mode);
+$('send').onclick=()=>run(async()=>{if(!$('email').reportValidity())return;if(mode==='signup'&&!$('password').reportValidity())return;await auth(mode==='signup'?'signup':'recover',{email:$('email').value,password:mode==='signup'?$('password').value:undefined});status('验证码已请求。测试环境请打开测试收件箱查看邮件；重新发送间隔至少 60 秒。')});
+$('authForm').onsubmit=e=>{e.preventDefault();run(async()=>{const email=$('email').value,password=$('password').value;if(mode==='login'){session=await auth('login',{email,password});$('identity').textContent=email;$('account').hidden=true;$('workspace').hidden=false;$('password').value='';await list();status('已登录。')}else{await auth(mode==='signup'?'confirm':'reset',{email,code:$('code').value,password:mode==='reset'?password:undefined});$('password').value='';setMode('login');status('操作成功，请使用邮箱和密码登录。')}})};
+function button(text,handler,cls='secondary'){const b=document.createElement('button');b.type='button';b.textContent=text;b.className=cls;b.onclick=()=>run(handler);return b}
+async function download(path,name){const response=await request(path,{},true),blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download=name.endsWith('.prg')?name:name+'.prg';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);status('文件已下载。')}
+async function list(){const response=await request('/v1/projects',{},true),projects=await response.json();$('files').replaceChildren();if(!projects.length){$('files').textContent='还没有云文件。';return}for(const p of projects){const row=document.createElement('div');row.className='file';const title=document.createElement('strong');title.textContent=p.name;const meta=document.createElement('p');meta.className='meta';meta.textContent=`版本 ${p.revision} · ${(p.size/1024).toFixed(1)} KiB · ${new Date(p.updated_at).toLocaleString()}`;row.append(title,meta,button('下载',()=>download(`/v1/projects/${p.id}/file`,p.name)),button('上传新版本',async()=>{pending=p;$('replacement').value='';$('replacement').click()}),button('历史版本',async()=>{const response=await request(`/v1/projects/${p.id}/revisions`,{},true),versions=await response.json();let history=row.querySelector('.history');if(history)history.remove();history=document.createElement('div');history.className='history';for(const v of versions)history.append(button('下载版本 '+v.revision,()=>download(`/v1/projects/${p.id}/revisions/${v.revision}/file`,p.name+'-v'+v.revision+'.prg')));row.append(history)}),button('删除',async()=>{if(!confirm('删除这个项目及其全部历史版本？'))return;await request('/v1/projects/'+p.id,{method:'DELETE',headers:{'If-Match':'"'+p.revision+'"'}},true);await list();status('项目及历史版本已删除。')},'danger'));$('files').append(row)}}
+$('refreshList').onclick=()=>run(async()=>{await list();status('列表已刷新。')});
+$('logout').onclick=()=>run(async()=>{try{await auth('logout',{},true);status('已退出登录。')}finally{session=null;$('workspace').hidden=true;$('account').hidden=false;$('files').replaceChildren()}});
+$('uploadForm').onsubmit=e=>{e.preventDefault();run(async()=>{const file=$('projectFile').files[0];if(file.size>20*1024*1024)throw new Error('文件超过 20 MiB。');await request('/v1/projects',{method:'POST',headers:{'Content-Type':'application/octet-stream','X-Project-Name':encodeURIComponent($('projectName').value)},body:file},true);$('uploadForm').reset();await list();status('已保存云文件。')})};
+$('replacement').onchange=()=>run(async()=>{const file=$('replacement').files[0];if(!file||!pending)return;if(file.size>20*1024*1024)throw new Error('文件超过 20 MiB。');await request(`/v1/projects/${pending.id}/file`,{method:'PUT',headers:{'Content-Type':'application/octet-stream','If-Match':'"'+pending.revision+'"'},body:file},true);await list();status('新版本已保存，旧版本可从历史版本下载。')});
+</script>
+</html>
