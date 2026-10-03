@@ -51,7 +51,7 @@ alias 写入，只实现 Project Graph 的布局参数。
 未配置 Developer ID 签名或 Apple 公证。macOS 实机安装和 Gatekeeper 行为需在
 Mac 上验收；Linux 静态检查不能替代实机运行。
 
-## 本次构建验证
+## 0.1.22 历史构建验证
 
 - 官方模板包 SHA-256 与上述固定值一致；Godot macOS Release ZIP 导出退出码 0，
   无导出错误或警告。通过 MCP 恢复项目配置和导出预设。
@@ -63,6 +63,21 @@ Mac 上验收；Linux 静态检查不能替代实机运行。
 - Go 编译、vet、模块校验通过；复用库的 dmg、hfsplus、udif、dsstore 测试通过。
 - 产物：dist/ProjectGraph-0.1.22-universal.dmg。SHA-256：
   `6ec9e61482f9ad0e40e7fc0e5074d44f79f66e54002264f4129bbc10ce02a8d1`。
+
+## 2026-10-03 重新打包
+
+从当前工作区重新导出，使用当前项目版本 0.1.21，增加日期后缀以区别旧产物。
+复用已有背景、拖动安装布局和固定版本的 DMG 库，没有增加依赖或修改布局。
+通过 Godot MCP 的项目查询和编辑器脚本类别进行临时配置、Release ZIP 导出、
+保留权限和符号链接的解压、DMG 构建，以及原始项目配置和预设恢复。
+临时禁用开发插件、MCP 自动加载和 shader baker，应用品牌图标、Universal 架构、
+生产力分类与 `dev.graphif.ProjectGraph` 标识。导出与 DMG 构建退出码均为 0。
+
+产物：`dist/ProjectGraph-0.1.21-20261003-universal.dmg`，95,450,224 字节。
+SHA-256：`1a07367dac55364517f816b9750928de35092e2c12b1ada3e520fa5489215ca1`。
+本轮仅执行用户请求的编译与打包，未运行 Go 测试、DMG 挂载或应用启动。
+以下手动验收仍需在 Intel 和 Apple Silicon Mac 上执行；开发者签名和 Apple
+公证尚未配置。
 
 ## 手动验收（尚未执行）
 
