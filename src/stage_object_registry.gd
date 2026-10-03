@@ -35,6 +35,71 @@ static func capture(target_root: Node) -> Dictionary:
 static func restore(target_root: Node, snapshot: Dictionary) -> void:
 	if target_root.has_method("finish_interaction"):
 		target_root.call("finish_interaction")
+	var records: Array = snapshot.get("objects", [])
+	var wanted := {}
+	for record in records:
+		if not record is Dictionary:
+			continue
+		var identifier := str(JSON.to_native(record.get("properties", {}).get("id", "")))
+		if identifier.is_empty() or wanted.has(identifier):
+			await _replace_all(target_root, snapshot)
+			return
+		wanted[identifier] = record
+	var by_id := {}
+	for child in target_root.get_children():
+		if not child is StageObject or child.is_queued_for_deletion():
+			continue
+		if child.id.is_empty() or by_id.has(child.id):
+			await _replace_all(target_root, snapshot)
+			return
+		by_id[child.id] = child
+	# Only remove records absent from the target state or whose type changed.
+	for identifier in by_id.keys():
+		var object: StageObject = by_id[identifier]
+		if not wanted.has(identifier) or _type_for(object) != str(wanted[identifier].get("type", "")):
+			target_root.remove_child(object)
+			object.queue_free()
+			by_id.erase(identifier)
+	var pending_references: Array[Dictionary] = []
+	var ordered: Array[StageObject] = []
+	for record in records:
+		if not record is Dictionary:
+			continue
+		var identifier := str(JSON.to_native(record.get("properties", {}).get("id", "")))
+		var object: StageObject = by_id.get(identifier)
+		if object == null:
+			object = instantiate_record(record, pending_references)
+			if object == null:
+				continue
+			if object is TextNode and target_root.has_meta("load_canvas_font"):
+				object.set_meta("prepared_canvas_font", target_root.get_meta("load_canvas_font"))
+			target_root.add_child(object)
+			by_id[identifier] = object
+		else:
+			_restore_transform(object, record.get("transform", {}))
+			_restore_properties(object, record.get("properties", {}), pending_references, true)
+		ordered.append(object)
+	# Resolve every reference, including unchanged edges pointing to recreated nodes.
+	for reference in pending_references:
+		var object: StageObject = reference.object
+		var value: Variant = by_id.get(reference.reference_id)
+		if object.get(reference.property) != value:
+			object.set(reference.property, value)
+	# Keep snapshot order without disturbing tool nodes between object slots.
+	var index := 0
+	for object in ordered:
+		while index < target_root.get_child_count() and not target_root.get_child(index) is StageObject:
+			index += 1
+		if object.get_index() != index:
+			target_root.move_child(object, index)
+		index += 1
+	var layer_mover := target_root.get_node_or_null("EntityLayerMover")
+	if layer_mover != null:
+		layer_mover.call("reset_tracking")
+	await target_root.get_tree().process_frame
+
+
+static func _replace_all(target_root: Node, snapshot: Dictionary) -> void:
 	for child in target_root.get_children():
 		if child is StageObject:
 			child.queue_free()
@@ -119,15 +184,18 @@ static func _type_for(object: StageObject) -> String:
 static func _restore_transform(object: StageObject, transform: Dictionary) -> void:
 	var position: Variant = _decode_vector2(transform.get("position"))
 	if position != null:
-		object.position = position
+		if object.position != position:
+			object.position = position
 	if transform.get("rotation") is float or transform.get("rotation") is int:
-		object.rotation = float(transform.rotation)
+		if object.rotation != float(transform.rotation):
+			object.rotation = float(transform.rotation)
 	var scale: Variant = _decode_vector2(transform.get("scale"))
 	if scale != null:
-		object.scale = scale
+		if object.scale != scale:
+			object.scale = scale
 
 
-static func _restore_properties(object: StageObject, properties: Dictionary, pending_references: Array[Dictionary]) -> void:
+static func _restore_properties(object: StageObject, properties: Dictionary, pending_references: Array[Dictionary], only_changed := false) -> void:
 	var property_names := _serializable_property_names(object)
 	for property_name in properties:
 		if not property_names.has(property_name):
@@ -140,7 +208,9 @@ static func _restore_properties(object: StageObject, properties: Dictionary, pen
 				"reference_id": str(value["$ref"]),
 			})
 			continue
-		object.set(property_name, _decode_value(value, object.get(property_name)))
+		var restored: Variant = _decode_value(value, object.get(property_name))
+		if not only_changed or object.get(property_name) != restored:
+			object.set(property_name, restored)
 
 
 static func _serializable_property_names(object: StageObject) -> PackedStringArray:
