@@ -315,7 +315,7 @@ func _refresh_selection_outlines() -> void:
 			_selection_lines.erase(id)
 
 
-func delete_objects(objects: Array[StageObject]) -> void:
+func delete_objects(objects: Array[StageObject], preserve_contents := false) -> void:
 	if objects.is_empty():
 		return
 	$EntityLayerMover.cancel()
@@ -325,13 +325,22 @@ func delete_objects(objects: Array[StageObject]) -> void:
 	for object in stage_objects():
 		if object is Entity:
 			for root in objects:
-				if root is Entity and object.is_inside_container(root) and not targets.has(object):
+				if not preserve_contents and root is Entity and object.is_inside_container(root) and not targets.has(object):
 					targets.append(object)
 					break
 	for object in stage_objects():
 		if object is LineEdge and (targets.has(object.source) or targets.has(object.target)) and not targets.has(object):
 			targets.append(object)
 	history.begin_transaction()
+	if preserve_contents:
+		for object in stage_objects():
+			if not object is Entity or targets.has(object):
+				continue
+			var owner: Entity = object.container
+			while is_instance_valid(owner) and targets.has(owner):
+				owner = owner.container
+			if object.container != owner:
+				object.container = owner
 	for object in stage_objects():
 		if object is TextNode and targets.has(object.topic_parent) and not targets.has(object):
 			object.topic_parent = null
@@ -340,7 +349,7 @@ func delete_objects(objects: Array[StageObject]) -> void:
 		object.queue_free()
 	$EntityLayerMover.reset_tracking()
 	select_ids(PackedStringArray())
-	history.commit()
+	history.commit(not preserve_contents)
 	document_changed.emit()
 
 

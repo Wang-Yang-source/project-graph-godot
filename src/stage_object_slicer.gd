@@ -117,7 +117,24 @@ func _update_slice_endpoint(point: Vector2) -> void:
 		for stage_object in _get_stage_objects():
 			if _segment_intersects_collision_box(_slice_start, _slice_end, stage_object):
 				_slice_targets[stage_object] = true
+	_protect_group_contents()
 	_update_line()
+
+
+func _protect_group_contents() -> bool:
+	var groups: Array[Entity] = []
+	for object in _slice_targets:
+		if object is TextNode and object._container_active:
+			groups.append(object)
+	for object in _slice_targets.keys():
+		for group in groups:
+			if object is Entity and object.is_inside_container(group):
+				_slice_targets.erase(object)
+				break
+			if object is LineEdge and (object.source.is_inside_container(group) or object.target.is_inside_container(group)):
+				_slice_targets.erase(object)
+				break
+	return not groups.is_empty()
 
 
 func _include_connected_edges() -> void:
@@ -149,6 +166,7 @@ func _finish_slice() -> void:
 			target_root.select_ids(PackedStringArray())
 			target_root.context_requested.emit(_slice_end)
 		return
+	var opening_group := _protect_group_contents()
 	# 特效只来自切线直接命中的实体；关联线只在删除时连带清理。
 	for stage_object in _slice_targets:
 		if is_instance_valid(stage_object) and stage_object is Entity:
@@ -164,8 +182,8 @@ func _finish_slice() -> void:
 	if targets.is_empty():
 		return
 	if target_root is Stage:
-		# 与删除菜单共用容器级联删除和连线清理，保持同一步历史。
-		target_root.delete_objects(targets)
+		# Cutting a wrapper opens its contents; ordinary deletion keeps cascading.
+		target_root.delete_objects(targets, opening_group)
 		return
 	var history := _get_history()
 	if history != null:
