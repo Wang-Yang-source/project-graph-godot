@@ -5,7 +5,7 @@ const PATH := "user://workspace.cfg"
 const DEFAULTS := {
 	"theme": "system", "grid_h": true, "grid_v": true, "grid_dots": false,
 	"snap": false, "physics": true, "effects": true, "welcome": true,
-	"left_mode": 0, "right_mode": 0, "ui_scale": 100.0, "camera_speed": 800.0,
+	"left_mode": 0, "right_mode": 0, "ui_scale": 200.0, "camera_speed": 800.0,
 	"classroom": false, "privacy": false, "quick": true,
 }
 static var _config := ConfigFile.new()
