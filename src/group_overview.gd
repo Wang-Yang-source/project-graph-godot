@@ -603,7 +603,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	if not covered and fill.a == 0 and group.font_size * pixel_scale < 5.0:
 		background = Color((Palette.LATTE if light else Palette.MOCHA)["surface2"], .2)
 	var border_color := Color((Palette.LATTE if light else Palette.MOCHA)["surface2"])
-	var text_background := fill if fill.a == 1.0 else canvas_color
+	var text_background := fill if group._container_active and fill.a == 1.0 else canvas_color
 	var brightness := .2126 * text_background.r + .7152 * text_background.g + .0722 * text_background.b
 	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
 	var text := group.text.replace("\n", " ")
@@ -651,11 +651,12 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	# The direct next-layer preview stays above the parent to preserve requested
 	# readability, while every covered title uses the master fitting formula.
 	var radius := Corners.fitted_radius(panel.size, 14.0 if covered else 6.0, 2.0 if covered else 1.0)
-	var framed := group._container_active or not root
+	var framed := group._container_active
 	var style_key := [background, border_color, radius, framed, covered, root]
 	if panel.get_meta("style_key", []) != style_key:
 		var style := StyleBoxFlat.new()
-		style.bg_color = background
+		style.bg_color = background if framed else Color.TRANSPARENT
+		style.draw_center = framed
 		style.border_color = border_color
 		style.set_border_width_all(1 if framed and covered else 0)
 		panel.add_theme_stylebox_override("panel", Corners.style(style, radius, true, true))
