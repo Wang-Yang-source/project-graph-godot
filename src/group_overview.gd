@@ -16,6 +16,7 @@ var _hidden: Dictionary = {}
 var _suppressed: Dictionary = {}
 var _summaries: Dictionary = {}
 var _refresh_key: Array = []
+var _view_rect_key: Array = []
 var _layout_revision := -1
 var _objects: Array = []
 var _groups: Array = []
@@ -98,8 +99,9 @@ func refresh() -> void:
 	var camera: Camera2D = stage.camera
 	var viewport_size := get_viewport_rect().size
 	var key := [stage.layout_revision, stage.document_revision, camera.zoom, viewport_size,
-		stage.world_view_rect, get_viewport().get_final_transform(), camera_scale_threshold, viewport_size_ratio, stage._applied_theme_light]
+		get_viewport().get_final_transform(), camera_scale_threshold, viewport_size_ratio, stage._applied_theme_light]
 	if key == _refresh_key:
+		_refresh_pan_visibility(stage)
 		return
 	_refresh_key = key
 	var changed := _layout_revision != stage.layout_revision
@@ -166,6 +168,23 @@ func refresh() -> void:
 		_link_render_key.clear()
 	for identifier in _summaries:
 		_update_summary(_preview_nodes[identifier], _summaries[identifier])
+	_avoid_title_overlaps()
+	_update_preview_links()
+	_view_rect_key = [stage.world_view_rect]
+
+
+func _refresh_pan_visibility(stage: Stage) -> void:
+	# Translation changes culling, but preserves world geometry and title layout.
+	var key := [stage.world_view_rect]
+	if key == _view_rect_key:
+		return
+	_view_rect_key = key
+	for identifier in _summaries:
+		var panel: Panel = _summaries[identifier]
+		var rect: Rect2 = panel.get_meta("view_rect", Rect2())
+		panel.visible = bool(panel.get_meta("view_readable", false)) and stage.world_view_rect.intersects(rect, true)
+		if panel.visible and panel.get_meta("presentation_pending", true):
+			_update_summary(_preview_nodes[identifier], panel)
 	_avoid_title_overlaps()
 	_update_preview_links()
 
@@ -547,10 +566,14 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var covered := root or group._container_active
 	# Below legible size, omit tiny frames as well as text to reduce overlap.
 	var readable := maxf(screen_size.x, screen_size.y) >= 20.0 if covered else screen_size.x >= 28.0 and screen_size.y >= 18.0
+	panel.set_meta("view_rect", rect)
+	panel.set_meta("view_readable", readable)
+	panel.set_meta("presentation_pending", true)
 	if not readable or not stage.world_view_rect.intersects(rect, true):
 		panel.hide()
 		return
 	panel.show()
+	panel.set_meta("presentation_pending", false)
 	var offset := float(posmod(group.id.hash(), 16)) / 16.0
 	var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
 	var presentation_key := [revision, stage.document_revision, pixel_scale, rect, root, covered, stage._applied_theme_light]
