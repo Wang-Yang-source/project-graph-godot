@@ -314,11 +314,13 @@ static func connection_curve(from_rect: Rect2, to_rect: Rect2, anchors: PackedVe
 	var normal := anchors[2] if anchors.size() > 3 else (anchors[0] - Vector2(0.5, 0.5)) * 2.0
 	var end_normal := anchors[3] if anchors.size() > 3 else (anchors[1] - Vector2(0.5, 0.5)) * 2.0
 	end += end_normal * end_inset
-	var gap := maxf(0.0, (end - start).dot(normal))
-	# 不设固定最小弯曲半径，近距离连接也不会产生回钩。
-	var handle := minf(gap * 0.45, 96.0)
-	var control_1 := start + normal * handle
-	var control_2 := end + end_normal * handle
+	var delta := end - start
+	# Scale each bend with the gap along its own outline normal. This keeps
+	# long connections flowing and preserves the shape when reversing an edge.
+	var start_handle := maxf(0.0, delta.dot(normal)) * 0.45
+	var end_handle := maxf(0.0, -delta.dot(end_normal)) * 0.45
+	var control_1 := start + normal * start_handle
+	var control_2 := end + end_normal * end_handle
 	if adaptive:
 		# Native adaptive tessellation omits redundant vertices on straight spans.
 		var curve := Curve2D.new()
