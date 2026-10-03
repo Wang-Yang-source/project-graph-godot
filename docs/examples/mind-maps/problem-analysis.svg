@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="2400" viewBox="-960 -1200 1920 2400" role="img" aria-labelledby="title desc"><title id="title">问题分析示例模板</title><desc id="desc">论文启发的 Project Graph 风格设计预览，不是运行截图。</desc>
+<defs><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#45475a" opacity=".38"/></pattern></defs><rect x="-960" y="-1200" width="1920" height="2400" fill="#1e1e2e"/><rect x="-960" y="-1200" width="1920" height="2400" fill="url(#grid)"/>
+<text x="-840" y="-1120" fill="#cba6f7" font-family="sans-serif" font-size="18" letter-spacing="5">PROJECT GRAPH / PRACTICAL MAPS</text>
+<path d="M -490 0 C -400 0, -380 -585, -290 -585" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -715, 235 -715" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -585, 235 -585" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -455, 235 -455" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 -195, -290 -195" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -325, 235 -325" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -195, 235 -195" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -65, 235 -65" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 195, -290 195" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 65, 235 65" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 195, 235 195" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 325, 235 325" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 585, -290 585" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 455, 235 455" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 585, 235 585" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 715, 235 715" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<g><rect x="-665" y="-1062" width="1250" height="144" rx="18" fill="#313244" stroke="#585b70" stroke-width="1.5"/>
+<text x="-40" y="-1018.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="38">04 · INQUIRY</text>
+<text x="-40" y="-961.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="38">问题分析 · 示例模板</text>
+</g>
+<g><rect x="-665" y="-895" width="1250" height="80" rx="18" fill="#1e1e2e" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="-855" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">示例：打开大项目很慢。先区分事实、解释与待确认信息。</text>
+</g>
+<g><rect x="-810" y="-90" width="320" height="180" rx="18" fill="#45475a" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="-650" y="-24" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="32">复杂问题</text>
+<text x="-650" y="24" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="32">从哪里开始？</text>
+</g>
+<g><rect x="-290" y="-627" width="300" height="84" rx="18" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="-140" y="-585" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">描述现象</text>
+</g>
+<g><rect x="235" y="-765" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-731.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">任务条件</text>
+<text x="460" y="-698.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">记录设备、文件规模与打开方式</text>
+</g>
+<g><rect x="235" y="-635" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-601.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">观察事实</text>
+<text x="460" y="-568.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">哪里等待？是否每次都发生？</text>
+</g>
+<g><rect x="235" y="-505" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-471.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">影响范围</text>
+<text x="460" y="-438.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">首开、重开、小文件是否相同？</text>
+</g>
+<g><rect x="-290" y="-237" width="300" height="84" rx="18" fill="#313244" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="-140" y="-195" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">提出解释</text>
+</g>
+<g><rect x="235" y="-375" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="-341.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">假设 A</text>
+<text x="460" y="-308.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">文件读取或解压占用时间</text>
+</g>
+<g><rect x="235" y="-245" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="-211.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">假设 B</text>
+<text x="460" y="-178.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">对象恢复或引用解析占用时间</text>
+</g>
+<g><rect x="235" y="-115" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="-81.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">假设 C</text>
+<text x="460" y="-48.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">字体准备或界面布局占用时间</text>
+</g>
+<g><rect x="-290" y="153" width="300" height="84" rx="18" fill="#313244" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="-140" y="195" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">寻找区分证据</text>
+</g>
+<g><rect x="235" y="15" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="48.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">分阶段观察</text>
+<text x="460" y="81.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">读取、解析、恢复、首次显示</text>
+</g>
+<g><rect x="235" y="145" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="178.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">控制变量</text>
+<text x="460" y="211.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">一次只改变一个条件</text>
+</g>
+<g><rect x="235" y="275" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="308.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">反例检查</text>
+<text x="460" y="341.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">寻找不符合当前解释的情况</text>
+</g>
+<g><rect x="-290" y="543" width="300" height="84" rx="18" fill="#313244" stroke="#fab387" stroke-width="1.5"/>
+<text x="-140" y="585" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">决定下一步</text>
+</g>
+<g><rect x="235" y="405" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="438.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">确认之前</text>
+<text x="460" y="471.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">把原因标为假设，保留其他解释</text>
+</g>
+<g><rect x="235" y="535" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="568.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">确认之后</text>
+<text x="460" y="601.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">针对有证据的环节改动</text>
+</g>
+<g><rect x="235" y="665" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="698.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">复查结果</text>
+<text x="460" y="731.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">比较改动前后，并检查副作用</text>
+</g>
+<g><rect x="-680" y="850" width="1280" height="100" rx="18" fill="#181825" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="885.75" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">结构启发：2024 年医学诊断小组思维导图试点研究</text>
+<text x="-40" y="914.25" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">doi:10.1186/s12909-024-05318-0；软件场景为迁移示例，非项目实测。</text>
+</g>
+<g><rect x="-680" y="995" width="1280" height="70" rx="18" fill="#181825" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="1030" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">使用方法：先另存为副本 · 双击改写节点 · Tab 扩展子主题 · 保留证据与来源</text>
+</g>
+</svg>

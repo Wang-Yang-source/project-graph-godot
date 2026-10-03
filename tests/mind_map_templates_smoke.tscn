@@ -1,0 +1,6 @@
+[gd_scene format=3 uid="uid://nrwucerr536s"]
+
+[ext_resource type="Script" path="res://tests/mind_map_templates_smoke.gd" id="1_s6mxt"]
+
+[node name="mind_map_templates_smoke" type="Node" unique_id=911454154]
+script = ExtResource("1_s6mxt")

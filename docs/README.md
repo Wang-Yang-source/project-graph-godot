@@ -25,6 +25,8 @@
 
 ## 研究与历史资料
 
+- [可编辑思维导图样例](examples/mind-maps/README.md)：四份论文启发的原生 `.prg` 模板、SVG 设计预览与 PNG 实际渲染图；专项自动验收通过，手动交互流程待执行。
+- [实用思维导图样例调查](research/practical-mind-map-templates.md)：四类模板的论文依据、证据边界与项目改编结构。
 - [软件设计调研](research/software-design.md)：保留论文证据、反对意见、候选库和长期方向。
 - [启动性能研究](research/startup-performance.md)：专项资料，尚无本项目性能测量结论。
 - [论文与来源](references/papers/README.md)：原始 PDF、版本和来源记录。
