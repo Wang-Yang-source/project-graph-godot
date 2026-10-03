@@ -22,7 +22,11 @@ var _groups: Array = []
 var _levels: Dictionary = {}
 var _blocked: Dictionary = {}
 var _group_rects: Dictionary = {}
+var _entity_rects: Dictionary = {}
+var _display_rect_cache: Dictionary = {}
+var _frame_scale := 1.0
 var _gate_key: Array = []
+var _gate_input_key: Array = []
 var _zoom_gates: Array[float] = []
 var _membership_key: Array = []
 var _cover_groups: Dictionary = {}
@@ -35,6 +39,7 @@ var _preview_roots := {}
 var _group_gates := {}
 var _preview_links := {}
 var _link_render_key: Array = []
+var _link_geometry_context: Array = []
 var _links_layer: Node2D
 var _panel_pool := {}
 var _overlap_key: Array = []
@@ -84,6 +89,7 @@ func invalidate() -> void:
 
 func refresh() -> void:
 	var stage: Stage = get_parent()
+	_frame_scale = maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
 	if stage.is_loading and stage.has_meta("loading_overview_revision"):
 		for identifier in _summaries:
 			if _active.has(identifier):
@@ -117,28 +123,31 @@ func refresh() -> void:
 			_build_preview_tree()
 			_membership_key.clear()
 		_refresh_preview_rects()
-	var sizes := []
-	for group in _groups:
-		sizes.append([group.get_instance_id(), _group_rects[group.get_instance_id()].size, group.font_size, group.text.strip_edges().is_empty()])
-	var gate_key := [sizes, viewport_size, camera_scale_threshold, viewport_size_ratio]
-	if gate_key != _gate_key:
-		_gate_key = gate_key
-		_zoom_gates.clear()
-		_group_gates.clear()
-		var side := maxf(viewport_size.x, viewport_size.y)
+	var gate_input_key := [stage.layout_revision, stage.document_revision, viewport_size, camera_scale_threshold, viewport_size_ratio]
+	if gate_input_key != _gate_input_key:
+		_gate_input_key = gate_input_key
+		var sizes := []
 		for group in _groups:
-			var identifier: int = group.get_instance_id()
-			var level: int = _levels.get(identifier, 0)
-			var rect: Rect2 = _group_rects[identifier]
-			var limit: float = camera_scale_threshold * camera.REFERENCE_ZOOM
-			var size_gate := side * minf(.75, viewport_size_ratio + .20 * level) / maxf(rect.size.x, rect.size.y)
-			# A large frame must not delay its preview until the header is unreadable.
-			var gate := minf(limit, maxf(size_gate, 18.0 / maxf(group.font_size, 8)))
-			_group_gates[identifier] = gate
-			_zoom_gates.append(gate)
-		_zoom_gates.sort()
+			sizes.append([group.get_instance_id(), _group_rects[group.get_instance_id()].size, group.font_size, group.text.strip_edges().is_empty()])
+		var gate_key := [sizes, viewport_size, camera_scale_threshold, viewport_size_ratio]
+		if gate_key != _gate_key:
+			_gate_key = gate_key
+			_zoom_gates.clear()
+			_group_gates.clear()
+			var side := maxf(viewport_size.x, viewport_size.y)
+			for group in _groups:
+				var identifier: int = group.get_instance_id()
+				var level: int = _levels.get(identifier, 0)
+				var rect: Rect2 = _group_rects[identifier]
+				var limit: float = camera_scale_threshold * camera.REFERENCE_ZOOM
+				var size_gate := side * minf(.75, viewport_size_ratio + .20 * level) / maxf(rect.size.x, rect.size.y)
+				# A large frame must not delay its preview until the header is unreadable.
+				var gate := minf(limit, maxf(size_gate, 18.0 / maxf(group.font_size, 8)))
+				_group_gates[identifier] = gate
+				_zoom_gates.append(gate)
+			_zoom_gates.sort()
 	var membership_zoom := camera.zoom.x + .00001
-	var membership := [gate_key, _zoom_gates.bsearch(membership_zoom)]
+	var membership := [_gate_key, _zoom_gates.bsearch(membership_zoom)]
 	if membership != _membership_key:
 		_membership_key = membership
 		var previous := _active.duplicate()
@@ -241,8 +250,12 @@ func _build_preview_tree() -> void:
 
 func _refresh_preview_rects() -> void:
 	_group_rects.clear()
+	_entity_rects.clear()
+	_display_rect_cache.clear()
 	for identifier in _entities:
-		_group_rects[identifier] = _entities[identifier].aabb
+		var rect: Rect2 = _entities[identifier].aabb
+		_entity_rects[identifier] = rect
+		_group_rects[identifier] = rect
 	var groups := _groups.duplicate()
 	groups.sort_custom(func(a: TextNode, b: TextNode) -> bool:
 		return int(_levels.get(a.get_instance_id(), 0)) < int(_levels.get(b.get_instance_id(), 0)))
@@ -257,6 +270,7 @@ func _refresh_preview_rects() -> void:
 
 
 func _refresh_membership() -> void:
+	_display_rect_cache.clear()
 	_hidden.clear()
 	for identifier in _cover_groups:
 		for ancestor in _cover_groups[identifier]:
@@ -311,6 +325,7 @@ func _refresh_membership() -> void:
 		panel.mouse_filter = Control.MOUSE_FILTER_STOP if _preview_roots.has(identifier) else Control.MOUSE_FILTER_IGNORE
 		panel.get_node("Title").mouse_filter = Control.MOUSE_FILTER_STOP if _preview_roots.has(identifier) else Control.MOUSE_FILTER_IGNORE
 	_rebuild_preview_links()
+	_link_geometry_context.clear()
 	_link_render_key.clear()
 
 
@@ -373,21 +388,27 @@ func _rebuild_preview_links() -> void:
 
 func _preview_display_rect(identifier: int) -> Rect2:
 	var object: TextNode = _preview_nodes[identifier]
-	var rect: Rect2 = _group_rects.get(identifier, object.aabb)
+	var rect: Rect2 = _group_rects[identifier] if _group_rects.has(identifier) else object.aabb
 	if not _preview_roots.has(identifier) and not object._container_active:
-		return object.aabb
+		return _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
 	if object._container_active:
 		# Match Panel zoom buckets so endpoints follow its exact visible boundary.
-		var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
+		var scale := _frame_scale
 		var offset := float(posmod(object.id.hash(), 16)) / 16.0
 		var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
+		var cache_key := [rect, pixel_scale, _preview_roots.has(identifier)]
+		var cached: Dictionary = _display_rect_cache.get(identifier, {})
+		if cached.get("key", []) == cache_key:
+			return cached.rect
 		var size := rect.size
 		if not _preview_roots.has(identifier):
 			size = size.min(Vector2(160, 80) / pixel_scale)
 		# A long, thin group still needs enough height for a visible curved end.
 		if _preview_roots.has(identifier) and not is_instance_valid(object.container) and maxf(size.x, size.y) * pixel_scale >= 20.0:
 			size = size.max(Vector2(24, 24) / pixel_scale)
-		return Rect2(rect.get_center() - size * .5, size)
+		var result := Rect2(rect.get_center() - size * .5, size)
+		_display_rect_cache[identifier] = {"key":cache_key, "rect":result}
+		return result
 	return rect
 
 
@@ -396,32 +417,36 @@ func _preview_endpoint_rect(identifier: int) -> Rect2:
 
 
 func _update_preview_links() -> void:
-	var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
+	var scale := _frame_scale
 	var bucket := floori(log(scale) / log(2.0) * 16.0)
 	var stage: Stage = get_parent()
 	var key := [_layout_revision, stage.document_revision, bucket, stage.world_view_rect]
 	if key == _link_render_key:
 		return
 	_link_render_key = key
+	var geometry_context := [_layout_revision, stage.document_revision, scale]
+	var refresh_geometry := geometry_context != _link_geometry_context
+	_link_geometry_context = geometry_context
 	var pixel_scale := pow(2.0, bucket / 16.0)
 	for data in _preview_links.values():
 		var node: Node2D = data.node
-		var from := _preview_endpoint_rect(data.source)
-		var to := _preview_endpoint_rect(data.target)
-		var geometry_key := [from, to]
-		# World curves survive camera changes. Only native stroke/head sizes change.
-		if data.get("geometry_key", []) != geometry_key:
-			data.geometry_key = geometry_key
-			var anchors := LineEdge.connection_uvs(from, to)
-			data.points = LineEdge.connection_curve(from, to, anchors, 24, 0.0, true)
-			data.tip = LineEdge.anchor(to, anchors[1])
-			data.direction = -anchors[3] if anchors.size() > 3 else (Vector2(.5,.5) - anchors[1]).normalized()
-			var bounds := Rect2(data.points[0], Vector2.ZERO)
-			for point in data.points:
-				bounds = bounds.expand(point)
-			data.bounds = bounds.grow(16.0)
-			var line: Line2D = node.get_node("Line")
-			line.points = node.get_global_transform().affine_inverse() * data.points
+		if refresh_geometry or not data.has("geometry_key"):
+			var from := _preview_endpoint_rect(data.source)
+			var to := _preview_endpoint_rect(data.target)
+			var geometry_key := [from, to]
+			# World curves survive camera changes. Only native stroke/head sizes change.
+			if data.get("geometry_key", []) != geometry_key:
+				data.geometry_key = geometry_key
+				var anchors := LineEdge.connection_uvs(from, to)
+				data.points = LineEdge.connection_curve(from, to, anchors, 24, 0.0, true)
+				data.tip = LineEdge.anchor(to, anchors[1])
+				data.direction = -anchors[3] if anchors.size() > 3 else (Vector2(.5,.5) - anchors[1]).normalized()
+				var bounds := Rect2(data.points[0], Vector2.ZERO)
+				for point in data.points:
+					bounds = bounds.expand(point)
+				data.bounds = bounds.grow(16.0)
+				var line: Line2D = node.get_node("Line")
+				line.points = node.get_global_transform().affine_inverse() * data.points
 		node.visible = stage.world_view_rect.intersects(data.bounds, true) and _summaries[data.source].visible and _summaries[data.target].visible
 		if not node.visible:
 			continue
@@ -516,8 +541,8 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var revision: int = stage.get_meta("loading_overview_revision", stage.layout_revision)
 	var identifier := group.get_instance_id()
 	var root := _preview_roots.has(identifier) or (stage.is_loading and _active.has(identifier))
-	var rect: Rect2 = _preview_display_rect(identifier) if _preview_nodes.has(identifier) else _group_rects.get(identifier, group.aabb)
-	var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
+	var rect: Rect2 = _preview_display_rect(identifier) if _preview_nodes.has(identifier) else (_group_rects[identifier] if _group_rects.has(identifier) else group.aabb)
+	var scale := _frame_scale
 	var screen_size := rect.size * scale
 	var covered := root or group._container_active
 	# Below legible size, omit tiny frames as well as text to reduce overlap.
@@ -528,6 +553,10 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	panel.show()
 	var offset := float(posmod(group.id.hash(), 16)) / 16.0
 	var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
+	var presentation_key := [revision, stage.document_revision, pixel_scale, rect, root, covered, stage._applied_theme_light]
+	if panel.get_meta("presentation_key", []) == presentation_key:
+		return
+	panel.set_meta("presentation_key", presentation_key)
 	var light := group._display_theme_is_light()
 	var canvas_color := Palette.color(light, "surface.canvas")
 	var fill := group.fill_color
