@@ -125,12 +125,12 @@ InkSeine 将搜索融入笔记现场；Sensecape 探索通过多层抽象组织�
 
 | 研究 | 实际研究了什么 | 对设计的约束 |
 | --- | --- | --- |
-| Nesbit、Adesope，2006 | 55 项研究、5818 名参与者；制图子组中，相对写文本或提纲的标准化效应量约 0.194，相对讲授或讨论约 0.742，且分析有样本范围限制 | 主动整理可能贡献较大收益；不能把效应量当作提升百分比。应与认真写作和提纲这类强基线比较。[PDF 第 19–20 页](../references/papers/2006-nesbit-adesope-meta-analysis.pdf) |
-| InkSeine，2007 | 12 名计算机科学研究生分批参加形成性与迭代可用性研究 | 支持搜索现场整合与手势可发现性的设计探索，不证明长期效率。[PDF 第 3、8–9 页](../references/papers/2007-inkseine.pdf) |
-| Okoe 等，2017 | 大规模线上参与者的短时图读取实验，使用单一食材共现网络 | 网络实例、任务和交互条件限制外推；不能用其结果断言所有知识图的最佳表示。[PDF 第 7–12 页](../references/papers/2017-node-link-matrix-comparison.pdf) |
-| Sensecape，2023 | 12 人被试内比较，每条件主要任务 20 分钟，观察概念、层级与重访等行为 | 概念更多、层级更深不等于理解更好；正式基线也集成聊天与画布，应避免把跨应用复制成本误算为层级界面的收益。[PDF 第 8–10、13–14 页](../references/papers/2023-sensecape.pdf) |
-| Graphologue，2023 | 50 个查询用于技术评价，7 人参加用户研究；标注指标衡量生成文本与图的对应 | 关系标注 F1 不代表事实正确率；用户评价没有同步随机对照。[PDF 第 11–14 页](../references/papers/2023-graphologue.pdf) |
-| ScholarMate，2025/2026 | 两名研究生的先导试用，另有文献整理案例 | 可提供来源追溯、建议修改和撤销需求的线索；不足以估计一般用户的效率或分类准确率。[PDF 第 5–6 页](../references/papers/2025-scholarmate-v3-2026.pdf) |
+| Nesbit、Adesope，2006 | 55 项研究、5818 名参与者；制图子组中，相对写文本或提纲的标准化效应量约 0.194，相对讲授或讨论约 0.742，且分析有样本范围限制 | 主动整理可能贡献较大收益；不能把效应量当作提升百分比。应与认真写作和提纲这类强基线比较。[PDF 第 19–20 页](../references/papers/learning/2006-nesbit-adesope-meta-analysis.pdf) |
+| InkSeine，2007 | 12 名计算机科学研究生分批参加形成性与迭代可用性研究 | 支持搜索现场整合与手势可发现性的设计探索，不证明长期效率。[PDF 第 3、8–9 页](../references/papers/tools/2007-inkseine.pdf) |
+| Okoe 等，2017 | 大规模线上参与者的短时图读取实验，使用单一食材共现网络 | 网络实例、任务和交互条件限制外推；不能用其结果断言所有知识图的最佳表示。[PDF 第 7–12 页](../references/papers/representation/2017-node-link-matrix-comparison.pdf) |
+| Sensecape，2023 | 12 人被试内比较，每条件主要任务 20 分钟，观察概念、层级与重访等行为 | 概念更多、层级更深不等于理解更好；正式基线也集成聊天与画布，应避免把跨应用复制成本误算为层级界面的收益。[PDF 第 8–10、13–14 页](../references/papers/tools/2023-sensecape.pdf) |
+| Graphologue，2023 | 50 个查询用于技术评价，7 人参加用户研究；标注指标衡量生成文本与图的对应 | 关系标注 F1 不代表事实正确率；用户评价没有同步随机对照。[PDF 第 11–14 页](../references/papers/tools/2023-graphologue.pdf) |
+| ScholarMate，2025/2026 | 两名研究生的先导试用，另有文献整理案例 | 可提供来源追溯、建议修改和撤销需求的线索；不足以估计一般用户的效率或分类准确率。[PDF 第 5–6 页](../references/papers/tools/2025-scholarmate-v3-2026.pdf) |
 
 共同启示是：研究支持更好的表达与控制机制，产品仍需证明收益超过录入、维护和核查成本。论文内部统计口径不清楚的细节不作为本报告的决策依据。
 
@@ -534,15 +534,15 @@ AI 生成关系与用户确认关系应可区分，模型输出不能自行升�
 | --- | --- | --- |
 | Searching for the Missing Link，1993 | [作者 HTML 全文](https://people.engr.tamu.edu/shipman/viki/papers/ht93/ht93.html) | 空间隐含结构与渐进明确化 |
 | VIKI，1994 | [作者论文索引](https://people.engr.tamu.edu/shipman/viki/papers/vkat-papers.html) | 后续阅读线索；未据摘要编写实验结论 |
-| Nesbit、Adesope，2006 | [PDF](../references/papers/2006-nesbit-adesope-meta-analysis.pdf) | 概念图学习证据及其范围 |
-| InkSeine，2007 | [PDF](../references/papers/2007-inkseine.pdf) | 笔记现场的搜索和收集 |
-| Novak、Cañas，2008 | [PDF](../references/papers/2008-novak-canas-concept-maps.pdf) | 焦点问题与命题 |
+| Nesbit、Adesope，2006 | [PDF](../references/papers/learning/2006-nesbit-adesope-meta-analysis.pdf) | 概念图学习证据及其范围 |
+| InkSeine，2007 | [PDF](../references/papers/tools/2007-inkseine.pdf) | 笔记现场的搜索和收集 |
+| Novak、Cañas，2008 | [PDF](../references/papers/representation/2008-novak-canas-concept-maps.pdf) | 焦点问题与命题 |
 | Karpicke、Blunt，2011 | [作者实验室 PDF](https://learninglab.psych.purdue.edu/downloads/2011/2011_Karpicke_Blunt_Science.pdf) | 学习方法比较的反例与边界；未在本地归档 |
-| Okoe 等，2017 | [PDF](../references/papers/2017-node-link-matrix-comparison.pdf) | 图表示依赖任务 |
-| Local-first Software，2019 | [PDF](../references/papers/2019-local-first.pdf) | 数据持有、离线与协作边界 |
-| Sensecape，2023 | [PDF](../references/papers/2023-sensecape.pdf) | 多层抽象 |
-| Graphologue，2023 | [PDF](../references/papers/2023-graphologue.pdf) | 图形式的 AI 交互 |
-| ScholarMate，2025/2026 | [PDF](../references/papers/2025-scholarmate-v3-2026.pdf) | 材料整理、主题建议与证据追溯 |
+| Okoe 等，2017 | [PDF](../references/papers/representation/2017-node-link-matrix-comparison.pdf) | 图表示依赖任务 |
+| Local-first Software，2019 | [PDF](../references/papers/tools/2019-local-first.pdf) | 数据持有、离线与协作边界 |
+| Sensecape，2023 | [PDF](../references/papers/tools/2023-sensecape.pdf) | 多层抽象 |
+| Graphologue，2023 | [PDF](../references/papers/tools/2023-graphologue.pdf) | 图形式的 AI 交互 |
+| ScholarMate，2025/2026 | [PDF](../references/papers/tools/2025-scholarmate-v3-2026.pdf) | 材料整理、主题建议与证据追溯 |
 
 ## 附录 B：本次交付与未执行事项
 
