@@ -41,10 +41,13 @@ func _run() -> void:
 	await process_frame
 	await fixture()
 	stage.history.begin_transaction()
-	stage.get_node("NodeRepulsion").begin_local_edit([a])
+	var solver := stage.get_node("NodeRepulsion")
+	var clearance: float = maxf(0.0, -solver._separation(a.aabb, b.aabb, true).distance) + solver.minimum_gap
+	solver.begin_local_edit([a])
 	await finish()
 	check(a.position.is_zero_approx() and not b.position.is_zero_approx(), "Local edit pins its driver and moves its neighbour")
-	check(b.position.length() <= 65.0, "Local neighbour movement stays bounded")
+	check(not a.aabb.intersects(b.aabb), "Local neighbour fully clears the pinned driver")
+	check(b.position.length() <= clearance + solver.influence_distance + 1.0, "Local neighbour moves only enough to clear overlap and the gentle influence radius")
 	check(far.all(func(node):return node.position.is_equal_approx(Vector2(2000,2000))), "Local scope leaves far nodes fixed")
 	stage.queue_free()
 	await process_frame

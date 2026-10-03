@@ -1,0 +1,40 @@
+extends "res://tests/linked_attraction_smoke.gd"
+
+func _run() -> void:
+	GraphPreferences.set_value("welcome", false, false)
+	app = load("res://src/main/main.tscn").instantiate()
+	root.add_child(app)
+	await settle()
+	stage = app.tabs.get_current_stage()
+	solver = stage.get_node("NodeRepulsion")
+	solver.set_physics_process(false)
+	GraphPreferences.set_value("physics", true, false)
+	var a := stage.create_text_node("A", Vector2(-320,0), false)
+	var b := stage.create_text_node("B", Vector2(320,0), false)
+	stage.connect_entities(a,b)
+	await settle()
+	stage.history.clear()
+	stage.history.begin_transaction()
+	solver.begin_global_layout()
+	clear_velocities()
+	solver._physics_process(1.0)
+	var near_speed := a.linear_velocity.length()
+	check(a.linear_velocity.x > 0 and b.linear_velocity.x < 0, "Linked nodes attract each other")
+	a.move_without_inertia(Vector2(-640,0))
+	b.move_without_inertia(Vector2(640,0))
+	await settle()
+	clear_velocities()
+	solver._physics_process(1.0)
+	check(a.linear_velocity.length() > 0 and a.linear_velocity.length() < near_speed, "Attraction weakens with larger separation")
+	check(a.linear_velocity.length() < solver.attraction_speed * 0.25, "Far-field attraction stays gentle")
+	var last := 1.0
+	for distance in [0.0,1.0,4.0,8.0,16.0,100.0]:
+		var weight: float = solver._repulsion_weight(distance)
+		check(is_finite(weight) and weight >= 0 and weight <= last, "Repulsion is finite and falls with distance")
+		last = weight
+	check(solver._repulsion_weight(0.0) == 1.0, "Coincident nodes receive finite maximum repulsion")
+	check(solver._repulsion_weight(solver.influence_distance) == 0.0, "Repulsion vanishes outside the local radius")
+	app.queue_free()
+	await process_frame
+	print("INVERSE_SQUARE_FORCES: ", "PASS" if failures.is_empty() else str(failures))
+	quit(0 if failures.is_empty() else 1)

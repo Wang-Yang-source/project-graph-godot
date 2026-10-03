@@ -6,6 +6,8 @@ extends Node2D
 @export_range(1.0, 2000.0) var acceleration := 120.0
 @export_range(1.0, 600.0) var maximum_speed := 24.0
 @export_range(1.0, 48.0) var minimum_gap := 4.0
+@export_range(1.0, 30.0) var contact_frequency := 12.0
+@export_range(0.5, 2.0) var contact_damping := 0.85
 @export_range(0.0, 600.0) var attraction_acceleration := 180.0
 @export_range(0.0, 200.0) var attraction_speed := 80.0
 @export_range(32.0, 600.0) var attraction_distance := 160.0
@@ -17,12 +19,14 @@ var _drivers: Dictionary[int, bool] = {}
 var _local_movable: Dictionary[int, bool] = {}
 var _local_edges: Array[LineEdge] = []
 var _local_origins: Dictionary[int, Vector2] = {}
+var _local_clearance_limits: Dictionary[int, float] = {}
 var _query_shape := RectangleShape2D.new()
 var _query := PhysicsShapeQueryParameters2D.new()
 
 # 用内置哈希表去重，避免求解每个约束时线性扫描已移动节点。
 # 保存实例 ID，避免已删除实体作为类型化对象键时导致遍历报错。
 var _moved: Dictionary[int, bool] = {}
+var _contact_bodies: Dictionary[int, bool] = {}
 
 
 func _ready() -> void:
@@ -61,7 +65,8 @@ func _physics_process(delta: float) -> void:
 		for child in target_root.get_children():
 			if child is Entity and not child is PenStroke and child.is_node_ready() and child.is_visible_in_tree() and not child.is_queued_for_deletion():
 				if not child.drag_controlled and not child.is_throwing:
-					child.linear_velocity = child.linear_velocity.limit_length(maximum_speed)
+					if not _contact_bodies.has(child.get_instance_id()):
+						child.linear_velocity = child.linear_velocity.move_toward(child.linear_velocity.limit_length(maximum_speed), acceleration * delta)
 				fastest = maxf(fastest, child.linear_velocity.length())
 				entries.append({"body": child, "rect": child.aabb, "container": child.container, "weights": {child: 1.0}})
 		# The label is a collision surface of its edge, never a separate saved entity.
@@ -121,46 +126,73 @@ func _physics_process(delta: float) -> void:
 				continue
 			var normal: Vector2 = separation.normal
 			pairs.append({"weights": weights, "normal": normal, "distance": distance})
-			var weight := clampf(1.0 - maxf(distance, 0.0) / influence_distance, 0.0, 1.0)
-			var push := normal * weight * weight
+			var push := normal * _repulsion_weight(distance)
 			for body in weights:
 				if not _held(body):
 					pushes[body] = pushes.get(body, Vector2.ZERO) + push * weights[body]
+	_contact_bodies.clear()
+	for pair in pairs:
+		if pair.distance < minimum_gap:
+			for body in pair.weights:
+				_contact_bodies[body.get_instance_id()] = true
 	for body in pushes:
 		var push: Vector2 = pushes[body]
 		if push.length_squared() < 0.0001:
 			continue
 		body.sleeping = false
 		body.linear_velocity += push.limit_length(1.0) * acceleration * delta
-		body.linear_velocity = body.linear_velocity.limit_length(body.throw_speed_limit if body.is_throwing else maximum_speed)
+		if body.is_throwing or not _contact_bodies.has(body.get_instance_id()):
+			body.linear_velocity = body.linear_velocity.move_toward(body.linear_velocity.limit_length(body.throw_speed_limit if body.is_throwing else maximum_speed), acceleration * delta)
 		_track(body)
-	# 约束下一物理步的接近速度。拖动者优先跟手，邻居承担大部分让位。
-	# 多轮处理可将推力沿紧密排列的节点传递，避免只推开第一块。
+	# Soft contact uses a damped spring instead of snapping the separating
+	# velocity to penetration / delta. Substeps propagate contact through chains.
 	for iteration in 6:
-		var corrected := false
 		for pair in pairs:
+			if pair.distance >= minimum_gap:
+				continue
 			var normal: Vector2 = pair.normal
-			var required_speed: float = minf((minimum_gap - pair.distance) / maxf(delta, 0.0001), maximum_speed)
+			var depth: float = minimum_gap - pair.distance
 			var relative_speed := 0.0
 			var total := 0.0
 			for body in pair.weights:
 				var weight: float = pair.weights[body]
 				relative_speed += body.linear_velocity.dot(normal) * weight
 				total += weight * weight * _mobility(body)
-			if relative_speed >= required_speed or total <= 0.0:
+			if total <= 0.0 or relative_speed >= contact_frequency * depth:
 				continue
-			corrected = true
-			var correction := normal * (required_speed - relative_speed) / total
+			var omega := contact_frequency * sqrt(1.0 + minf(depth / 64.0, 1.0) * 0.25)
+			var step := delta / 6.0
+			# Implicit damping keeps the spring stable at different physics rates.
+			var next_speed := (relative_speed + omega * omega * depth * step) / (1.0 + 2.0 * contact_damping * omega * step)
+			var correction := normal * (next_speed - relative_speed) / total
 			for body in pair.weights:
 				if not _held(body):
 					body.sleeping = false
 					body.linear_velocity += correction * pair.weights[body]
 					_track(body)
-		# 整轮没有速度修正，后续轮次的输入相同，可以直接结束。
-		if not corrected:
-			break
 	if not _drivers.is_empty():
+		for pair in pairs:
+			if pair.distance >= 0.0:
+				continue
+			for body in pair.weights:
+				var key: int = body.get_instance_id()
+				if _held(body) or not _local_origins.has(key):
+					continue
+				var total := 0.0
+				for endpoint in pair.weights:
+					total += pow(float(pair.weights[endpoint]), 2.0) * _mobility(endpoint)
+				var clearance: Vector2 = pair.normal * (minimum_gap - pair.distance) * float(pair.weights[body]) / maxf(total, 0.001)
+				var next: Vector2 = body.global_position - _local_origins[key] + clearance
+				_local_clearance_limits[key] = maxf(_local_clearance_limits.get(key, influence_distance), next.length() + influence_distance)
 		_bound_local_motion(delta)
+
+
+func _repulsion_weight(distance: float) -> float:
+	# A softened inverse-square field: finite at contact, zero at its local cutoff.
+	var softening := maxf(minimum_gap, 1.0)
+	var cutoff := pow(softening / (softening + influence_distance), 2.0)
+	var field := pow(softening / (softening + maxf(distance, 0.0)), 2.0)
+	return clampf((field - cutoff) / (1.0 - cutoff), 0.0, 1.0)
 
 
 func _apply_link_attraction(entries: Array[Dictionary], delta: float) -> void:
@@ -255,7 +287,8 @@ func _apply_link_attraction(entries: Array[Dictionary], delta: float) -> void:
 			var rect: Rect2 = surface.rect
 			var offset := center - rect.get_center()
 			var rest := maxf(attraction_distance, rect.size.length() * 0.5 + influence_distance)
-			var speed := minf(attraction_speed, maxf(0.0, offset.length() - rest) * 0.4)
+			var distance := offset.length()
+			var speed := attraction_speed * maxf(0.0, 1.0 - rest / maxf(distance, 0.001)) * pow(rest / maxf(distance, rest), 2.0)
 			var velocity := offset.normalized() * speed
 			for unit in surface.weights:
 				var weight: float = surface.weights[unit]
@@ -317,6 +350,7 @@ func stop_motion(keep_scope := false) -> void:
 			body.linear_velocity = Vector2.ZERO
 			body.angular_velocity = 0.0
 	_moved.clear()
+	_contact_bodies.clear()
 	if not keep_scope:
 		_global_layout_requested = false
 		_pin_drivers = true
@@ -324,6 +358,7 @@ func stop_motion(keep_scope := false) -> void:
 		_local_movable.clear()
 		_local_edges.clear()
 		_local_origins.clear()
+		_local_clearance_limits.clear()
 
 
 func _relative_weights(from: Dictionary, to: Dictionary) -> Dictionary[Entity, float]:
@@ -384,6 +419,23 @@ func _local_entries(delta: float) -> Array[Dictionary]:
 			var body: Variant = hit.collider
 			if body is Entity and not body is PenStroke and body.get_parent() == target_root and body.container == driver.container and body.is_visible_in_tree() and not body.is_queued_for_deletion():
 				bodies[body.get_instance_id()] = body
+	# Captions are edge surfaces. If one meets the gesture, its endpoints must
+	# participate even when the endpoints themselves lie outside the query.
+	for edge in _local_edges:
+		if not is_instance_valid(edge) or edge.is_queued_for_deletion() or not edge.is_visible_in_tree() or not is_instance_valid(edge.source) or not is_instance_valid(edge.target):
+			continue
+		if edge.source.container != edge.target.container:
+			continue
+		var layer: Entity = edge.source.container
+		if not sibling_layers.has(layer):
+			continue
+		if bodies.has(edge.source.get_instance_id()) or bodies.has(edge.target.get_instance_id()):
+			edge.refresh_for_physics()
+		var caption := edge.caption_rect()
+		if not caption.has_area() or not regions.any(func(region: Rect2) -> bool: return region.intersects(caption, true)):
+			continue
+		for endpoint in [edge.source, edge.target]:
+			bodies[endpoint.get_instance_id()] = endpoint
 	for key in bodies:
 		_local_movable[key] = true
 		if (not _pin_drivers or not _drivers.has(key)) and not _local_origins.has(key):
@@ -401,7 +453,8 @@ func _local_entries(delta: float) -> Array[Dictionary]:
 	for key in bodies:
 		var body: Entity = bodies[key]
 		if not body.drag_controlled and not body.is_throwing:
-			body.linear_velocity = body.linear_velocity.limit_length(maximum_speed)
+			var limit := maxf(maximum_speed, body.linear_velocity.length()) if _contact_bodies.has(key) else maximum_speed
+			body.linear_velocity = body.linear_velocity.move_toward(body.linear_velocity.limit_length(limit), acceleration * delta)
 		entries.append({"body": body, "rect": body.aabb, "container": body.container, "weights": {body: 1.0}})
 	for edge in _local_edges:
 		if not is_instance_valid(edge) or edge.is_queued_for_deletion() or not edge.is_visible_in_tree() or not is_instance_valid(edge.source) or not is_instance_valid(edge.target):
@@ -422,7 +475,8 @@ func _local_entries(delta: float) -> Array[Dictionary]:
 
 
 func _bound_local_motion(delta: float) -> void:
-	# Passive avoidance yields at most one influence radius per gesture.
+	# Ordinary magnetic drift stays local; penetration clearance gets only the
+	# additional travel it actually needs, rather than being clamped back inside.
 	for key in _local_movable:
 		if _drivers.has(key) or not _local_origins.has(key):
 			continue
@@ -431,5 +485,6 @@ func _bound_local_motion(delta: float) -> void:
 			continue
 		var offset: Vector2 = body.global_position - _local_origins[key]
 		var next := offset + body.linear_velocity * delta
-		if next.length_squared() > influence_distance * influence_distance:
-			body.linear_velocity = (next.limit_length(influence_distance) - offset) / maxf(delta, 0.0001)
+		var limit: float = _local_clearance_limits.get(key, influence_distance)
+		if next.length_squared() > limit * limit:
+			body.linear_velocity = (next.limit_length(limit) - offset) / maxf(delta, 0.0001)

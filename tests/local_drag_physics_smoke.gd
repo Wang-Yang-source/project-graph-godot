@@ -55,13 +55,15 @@ func _run() -> void:
 	dragged.set_physics_process(false)
 	dragged._drag_target = dragged.position
 	var neighbour_origin := neighbour.global_position
+	var clearance: float = maxf(0.0, -solver._separation(dragged.aabb, neighbour.aabb, true).distance) + solver.minimum_gap
 	await solve_once(solver)
 	check(not neighbour.linear_velocity.is_zero_approx(), "Nearby overlap still yields to dragging")
 	check(far.linear_velocity.is_zero_approx() and far_neighbour.linear_velocity.is_zero_approx(), "Dragging does not rearrange remote linked or crowded nodes")
 	check(dragged.linear_velocity.is_zero_approx(), "Dragged node stays controlled by pointer")
-	for i in 40:
+	for i in 60:
 		await solve_once(solver)
-	check(neighbour.global_position.distance_to(neighbour_origin) <= solver.influence_distance + 1.0, "Passive avoidance stays within one influence radius")
+	check(not dragged.aabb.intersects(neighbour.aabb), "Passive avoidance clears the dragged node")
+	check(neighbour.global_position.distance_to(neighbour_origin) <= clearance + solver.influence_distance + 1.0, "Passive avoidance stays within necessary clearance plus the gentle influence radius")
 	# The complete local yield belongs to the pointer gesture's single history entry.
 	dragged.pause_drag_for_layer_move()
 	stage.history._finish_commit()
