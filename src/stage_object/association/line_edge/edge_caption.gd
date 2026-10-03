@@ -9,6 +9,8 @@ const Palette = preload("res://src/main/theme_palette.gd")
 var _editing := false
 var _last_light: Variant = null
 var _last_stroke := Color(-1, -1, -1, -1)
+var _last_background := Color(-1, -1, -1, -1)
+var _hovered := false
 var _centering := false
 var _layout_dirty := true
 var _refresh_key: Array = []
@@ -24,6 +26,8 @@ func _ready() -> void:
 	label.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	editor.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	label.gui_input.connect(_label_input)
+	label.mouse_entered.connect(_set_hovered.bind(true))
+	label.mouse_exited.connect(_set_hovered.bind(false))
 	editor.gui_input.connect(_editor_input)
 	editor.focus_exited.connect(finish_edit)
 	editor.commit_requested.connect(finish_edit)
@@ -102,7 +106,7 @@ func _center_controls() -> void:
 	var content_size := label.get_minimum_size().max(editor.get_minimum_size())
 	var metrics := editor.measure_unwrapped(editor.text, true)
 	var margins := label.get_theme_stylebox("normal").get_minimum_size()
-	content_size.x = maxf(content_size.x, metrics.x + margins.x + 32.0)
+	content_size.x = maxf(content_size.x, metrics.x + margins.x + 10.0)
 	content_size.y = maxf(content_size.y, ceilf(metrics.y + margins.y + 4.0))
 	label.size = content_size
 	label.position = -content_size * 0.5
@@ -122,20 +126,22 @@ func _update_style() -> void:
 	var stage := edge.get_parent() as Stage
 	var light: bool = stage._applied_theme_light == 1 if stage != null and stage._applied_theme_light >= 0 else Palette.is_light(str(GraphPreferences.value("theme")))
 	var stroke := edge.display_stroke_color()
-	if _last_light == light and _last_stroke == stroke:
+	var background := edge._stroke_background(light)
+	if _last_light == light and _last_stroke == stroke and _last_background == background:
 		return
 	_layout_dirty = true
 	_last_light = light
 	_last_stroke = stroke
+	_last_background = background
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = stroke
-	normal.border_color = stroke
-	normal.set_border_width_all(1)
+	normal.bg_color = background.lerp(Palette.color(light, "accent.primary"), 0.08 if _editing else 0.04) if _editing or _hovered else background
+	normal.border_color = Color.TRANSPARENT
+	normal.set_border_width_all(0)
 	normal.set_corner_radius_all(6)
-	normal.content_margin_left = 8
-	normal.content_margin_right = 18
-	normal.content_margin_top = 4
-	normal.content_margin_bottom = 4
+	normal.content_margin_left = 6
+	normal.content_margin_right = 6
+	normal.content_margin_top = 2
+	normal.content_margin_bottom = 2
 	label.add_theme_stylebox_override("normal", Corners.style(normal, Corners.CONTROL, true))
 	var input_style := normal.duplicate() as StyleBoxFlat
 	input_style.bg_color = Color.TRANSPARENT
@@ -144,7 +150,7 @@ func _update_style() -> void:
 	input_style.content_margin_right -= 2.0
 	editor.add_theme_stylebox_override("normal", input_style)
 	editor.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
-	var foreground := Color.BLACK if Palette.neutral_text_color(normal.bg_color).get_luminance() < 0.5 else Color.WHITE
+	var foreground := Palette.neutral_text_color(background)
 	label.add_theme_color_override("font_color", Color.TRANSPARENT if _editing else foreground)
 	editor.add_theme_color_override("font_color", foreground)
 	editor.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
@@ -155,6 +161,14 @@ func _update_style() -> void:
 		var font: Font = edge.source.label.get_theme_font("font")
 		label.add_theme_font_override("font", font)
 		editor.add_theme_font_override("font", font)
+
+
+func _set_hovered(value: bool) -> void:
+	if _hovered == value:
+		return
+	_hovered = value
+	_last_light = null
+	_queue_refresh()
 
 
 func begin_edit() -> void:

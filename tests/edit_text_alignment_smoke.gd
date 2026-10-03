@@ -7,7 +7,7 @@ func check(ok: bool, message: String) -> void:
 		push_error(message)
 func settle() -> void:
 	for frame in 6: await process_frame
-func ink_center(view: SubViewport, label: Label) -> Vector2:
+func ink_center(view: SubViewport, label: Label, foreground: Color) -> Vector2:
 	await RenderingServer.frame_post_draw
 	var pixels := view.get_texture().get_image()
 	var transform := view.get_final_transform() * label.get_global_transform_with_canvas()
@@ -17,7 +17,7 @@ func ink_center(view: SubViewport, label: Label) -> Vector2:
 	for y in range(ceili(crop.position.y), floori(crop.end.y)):
 		for x in range(ceili(crop.position.x), floori(crop.end.x)):
 			var color := pixels.get_pixel(x,y)
-			if color.a > 0.8 and color.r < 0.2 and color.g < 0.2 and color.b < 0.2:
+			if color.a > 0.8 and Vector3(color.r,color.g,color.b).distance_to(Vector3(foreground.r,foreground.g,foreground.b)) < 0.12:
 				sum += Vector2(x,y)
 				count += 1
 	check(count > 10, "Visible glyph fixture contains enough ink")
@@ -48,22 +48,23 @@ func _run() -> void:
 	for object in [a,edge]:
 		var label: Label = a.label if object == a else caption.label
 		var editor: TextEdit = a.text_edit if object == a else caption.editor
+		var foreground := label.get_theme_color("font_color")
 		for zoom_value in [1.0,2.0]:
 			stage.camera.target_zoom = Vector2.ONE * zoom_value
 			stage.camera.zoom = stage.camera.target_zoom
 			stage.camera.position = object.position if object == a else caption.global_position
 			stage.camera.target_position = stage.camera.position
 			await settle()
-			var before := await ink_center(view,label)
+			var before := await ink_center(view,label,foreground)
 			object.enter_edit_mode()
 			editor.add_theme_color_override("caret_color", Color.TRANSPARENT)
 			await settle()
-			var during := await ink_center(view,label)
+			var during := await ink_center(view,label,foreground)
 			print("EDIT_ALIGNMENT: ", {"object":object.get_class(),"zoom":zoom_value,"before":before,"during":during,"shift":during-before,"label":label.get_character_bounds(0),"editor":editor.get_rect_at_line_column(0,0)})
 			check(before.distance_to(during) <= 0.6, "Entering editing keeps glyphs in place")
 			object.exit_edit_mode(false)
 			await settle()
-			var after := await ink_center(view,label)
+			var after := await ink_center(view,label,foreground)
 			check(before.distance_to(after) <= 0.6, "Cancel editing preserves glyph position")
 	view.queue_free()
 	await process_frame

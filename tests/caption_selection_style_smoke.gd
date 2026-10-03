@@ -39,7 +39,7 @@ func _run() -> void:
 			var foreground: Color = caption.editor.get_theme_color("font_color")
 			check(selection.a > 0 and selection.a <= 0.25, "Selection gently overlays the caption color instead of an opaque dark block")
 			check(caption.editor.get_theme_color("font_selected_color") == foreground, "Selected text retains caption contrast")
-			check(Corners.source(caption.label.get_theme_stylebox("normal")).bg_color == background, "Editing preserves the colored label background")
+			check(Corners.source(caption.label.get_theme_stylebox("normal")).bg_color.a == 1.0, "Editing keeps an opaque line mask with subtle focus feedback")
 			check(caption.editor.has_selection(), "Fixture exercises selected caption text")
 			if not light and color == Color("#ffcc00") and DisplayServer.get_name() != "headless":
 				await RenderingServer.frame_post_draw
