@@ -559,8 +559,12 @@ func edge_at(world_point: Vector2) -> LineEdge:
 	return nearest
 
 
+func can_connect_entities(from: Entity, to: Entity) -> bool:
+	return is_instance_valid(from) and is_instance_valid(to) and from != to and from.get_parent() == self and to.get_parent() == self and from.container == to.container
+
+
 func connect_entities(from: Entity, to: Entity) -> LineEdge:
-	if not is_instance_valid(from) or not is_instance_valid(to) or from == to:
+	if not can_connect_entities(from, to):
 		return null
 	for object in stage_objects():
 		if object is LineEdge and object.source == from and object.target == to:

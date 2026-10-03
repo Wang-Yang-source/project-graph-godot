@@ -203,7 +203,7 @@ func _exit_tree() -> void:
 
 func _update_drag_state(mouse_position: Vector2) -> void:
 	var entity := _get_entity_at(mouse_position)
-	_target = entity if entity != _source else null
+	_target = entity if entity != _source and (not target_root is Stage or target_root.can_connect_entities(_source, entity)) else null
 
 
 func _get_entity_at(point: Vector2) -> Entity:
