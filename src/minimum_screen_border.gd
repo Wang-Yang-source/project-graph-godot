@@ -19,6 +19,8 @@ var _group_fill: Polygon2D
 
 
 func _ready() -> void:
+	width = 1.0
+	get_viewport().size_changed.connect(_queue_refresh)
 	# Overview masks are restored at priority 50; refresh after that transition.
 	process_priority = 51
 	_control.resized.connect(_queue_refresh)
@@ -50,9 +52,10 @@ func _process(_delta: float) -> void:
 		ancestor = null if ancestor.top_level else ancestor.get_parent() as CanvasItem
 	if not _control.is_visible_in_tree() or visibility_layer == 0:
 		return
-	var canvas := _control.get_global_transform_with_canvas()
+	var render_transform := get_viewport().get_final_transform()
+	var canvas := render_transform * _control.get_global_transform_with_canvas()
 	# Defer offscreen style and outline work until the camera returns.
-	if not (canvas * Rect2(Vector2.ZERO, _control.size)).intersects(get_viewport_rect().grow(2.0), true):
+	if not (canvas * Rect2(Vector2.ZERO, _control.size)).intersects((render_transform * get_viewport_rect()).grow(2.0), true):
 		return
 	var current := _control.get_theme_stylebox(style_name)
 	# Theme/appearance edits may replace the display-only mask.
