@@ -13,7 +13,6 @@ var _light := false
 @onready var progress_bar: ProgressBar = $Center/ProgressBar
 
 var _transition_started := false
-var _load_requested := false
 var _forwarding := false
 
 
@@ -71,11 +70,7 @@ func _ready() -> void:
 	progress_bar.modulate.a = 0.0
 	_apply_progress_style()
 
-	var request_error := ResourceLoader.load_threaded_request(MAIN_SCENE, "PackedScene")
-	_load_requested = request_error == OK
-	if not _load_requested:
-		status.text = "工作区加载失败"
-		progress_bar.modulate = Palette.color(_light, "status.error")
+	_load_workspace.call_deferred()
 
 	var tween := create_tween().set_parallel(true)
 	tween.tween_property(logo, "modulate:a", 1.0, 0.28).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
@@ -85,33 +80,17 @@ func _ready() -> void:
 	tween.tween_property(progress_bar, "modulate:a", 1.0, 0.24).set_delay(0.22)
 
 
-func _process(_delta: float) -> void:
-	if not _load_requested:
+func _load_workspace() -> void:
+	# Exported scripts preload shared scenes/resources. Keep this load on the
+	# main thread after the splash is drawn to avoid threaded preload failures.
+	await RenderingServer.frame_post_draw
+	if _transition_started or _forwarding:
 		return
-
-	var load_progress := [0.0]
-	var load_status := ResourceLoader.load_threaded_get_status(MAIN_SCENE, load_progress)
-	progress_bar.value = clampf(load_progress[0] * 100.0, 0.0, 100.0)
-
-	if load_status == ResourceLoader.THREAD_LOAD_FAILED:
-		status.text = "工作区加载失败"
-		progress_bar.modulate = Palette.color(_light, "status.error")
-		_load_requested = false
-		return
-
-	if load_progress[0] < 0.99:
-		status.text = "正在加载工作区"
-
-	if _transition_started or load_status != ResourceLoader.THREAD_LOAD_LOADED:
-		return
-
-	var scene := ResourceLoader.load_threaded_get(MAIN_SCENE) as PackedScene
+	var scene := load(MAIN_SCENE) as PackedScene
 	if scene == null:
 		status.text = "工作区加载失败"
 		progress_bar.modulate = Palette.color(_light, "status.error")
-		_load_requested = false
 		return
-
 	progress_bar.value = 100.0
 	status.text = "即将进入工作区"
 	_transition_started = true
