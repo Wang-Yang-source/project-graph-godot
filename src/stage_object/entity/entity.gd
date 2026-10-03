@@ -36,6 +36,7 @@ var _position_sync_pending := false
 var _position_sync_target := Vector2.ZERO
 var _drag_origin := Vector2.ZERO
 var _drag_moved := false
+var _last_drag_update := Vector3.INF
 var _drag_target := Vector2.ZERO
 var _drag_samples: Array[Dictionary] = []
 var _release_pending := false
@@ -74,6 +75,7 @@ func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> voi
 				_history.begin_transaction()
 			is_dragging = true
 			_drag_moved = false
+			_last_drag_update = Vector3.INF
 			_drag_origin = global_position
 			drag_offset = get_global_mouse_position() - global_position
 			_drag_samples.clear()
@@ -169,6 +171,8 @@ func _update_drag_target() -> void:
 		_drag_moved = true
 	if GraphPreferences.value("snap"):
 		target_position = target_position.snapped(Vector2(64, 64))
+	if not _needs_drag_target_update(target_position):
+		return
 	var displacement: Vector2 = target_position - _drag_origin
 	for object in _drag_origins:
 		if is_instance_valid(object):
@@ -192,6 +196,16 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 		state.angular_velocity = 0.0
 		_release_pending = false
 	super(state)
+
+
+# Input events and physics catch-up may report the same target repeatedly.
+# Keep sampling pointer history, but avoid waking/moving every group member.
+func _needs_drag_target_update(target_position: Vector2, axis := -1) -> bool:
+	var key := Vector3(target_position.x, target_position.y, float(axis))
+	if key == _last_drag_update:
+		return false
+	_last_drag_update = key
+	return true
 
 
 func _sample_pointer() -> void:
