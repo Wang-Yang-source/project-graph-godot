@@ -420,15 +420,11 @@ func _rebuild_preview_links() -> void:
 
 func _preview_display_rect(identifier: int) -> Rect2:
 	var object: TextNode = _preview_nodes[identifier]
-	var rect: Rect2 = _group_rects[identifier] if _group_rects.has(identifier) else object.aabb
+	# Preserve saved geometry. Enlarging each tiny node to a fixed screen size
+	# moves its visible boundary into neighbours while the graph stays still.
 	if not object._container_active:
-		var original: Rect2 = _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
-		# Keep immediate leaf titles readable when their original glyph box shrinks.
-		var size := original.size if object.fill_color.a > 0.0 else original.size.max(Vector2(48, 24) / _frame_scale)
-		return Rect2(original.get_center() - size * .5, size)
-	# Preserve group bounds, center and aspect ratio; the camera supplies uniform zoom.
-
-	return rect
+		return _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
+	return _group_rects[identifier] if _group_rects.has(identifier) else object.aabb
 
 
 func _preview_endpoint_rect(identifier: int) -> Rect2:
@@ -590,7 +586,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var text_background := fill if fill.a == 1.0 else canvas_color
 	var brightness := .2126 * text_background.r + .7152 * text_background.g + .0722 * text_background.b
 	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
-	var text := group.text.replace("\n", " ")
+	var text := group.text
 	var content_key := [text, foreground]
 	var key := [revision, pixel_scale, rect, root, covered, content_key, background, border_color, group.font_size]
 	if panel.get_meta("summary_key", []) == key:
@@ -616,22 +612,27 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		title.add_theme_font_size_override("font_size", TITLE_FONT_SIZE)
 		title.add_theme_color_override("font_color", foreground)
 		panel.set_meta("summary_content", content_key)
-	# master getTextSize reports the em size for height, not font line height.
-	var measured := _summary_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, TITLE_FONT_SIZE)
+	# Native Label metrics include explicit line breaks and the font's ascent.
+	var measured := title.get_minimum_size()
+	var sampling_ceiling := pixel_scale * pow(2.0, 1.0 / 16.0)
+	var title_area := Rect2(Vector2.ZERO, panel.size)
+	if covered:
+		var header := (group.label.get_global_transform() * Rect2(Vector2.ZERO, group.label.size)).intersection(rect)
+		title_area = Rect2((header.position - rect.position) * pixel_scale, header.size * pixel_scale)
+		# Give the group heading a readable strip, never the whole group body.
+		title_area.size.y = minf(panel.size.y * .2,
+			maxf(title_area.size.y, DETAIL_TITLE_PIXELS * pixel_scale / sampling_ceiling))
+	var fit := minf(title_area.size.x / maxf(measured.x, .0001),
+		title_area.size.y / maxf(measured.y, .0001)) * .9
 	var desired := float(group.font_size) * pixel_scale
-	if covered or desired < DETAIL_TITLE_PIXELS:
-		# Fit the actual font line height; the em size can undercount CJK ascent.
-		var fit := minf(panel.size.x / maxf(measured.x, 0.0001),
-			panel.size.y / maxf(_summary_font.get_height(TITLE_FONT_SIZE), 0.0001)) * .9
-		desired = maxf(0.1, minf(fit * TITLE_FONT_SIZE, MAX_SUMMARY_TITLE_PIXELS * pixel_scale / (scale * pow(2.0, 1.0 / 16.0))))
-	title.visible = not text.strip_edges().is_empty() and (maxf(screen_size.x, screen_size.y) >= 20.0 if covered else desired > 5.0)
-	var factor := desired / TITLE_FONT_SIZE
-	title.size = Vector2(measured.x, _summary_font.get_height(TITLE_FONT_SIZE))
+	if covered:
+		desired = maxf(desired, DETAIL_TITLE_PIXELS * pixel_scale / sampling_ceiling)
+	desired = minf(desired, minf(fit * TITLE_FONT_SIZE, MAX_SUMMARY_TITLE_PIXELS * pixel_scale / sampling_ceiling))
+	var factor := maxf(desired, 0.0) / TITLE_FONT_SIZE
+	title.visible = not text.strip_edges().is_empty() and desired * scale / pixel_scale >= 5.0
+	title.size = measured
 	title.scale = Vector2.ONE * factor
-	title.position = (panel.size - title.size * factor) * .5
-	if root and group._container_active and not _preview_children.get(identifier, []).is_empty():
-		# Reserve the body for next-layer titles rather than enlarging the parent over them.
-		title.position.y = minf(title.position.y, 4.0 * pixel_scale / scale)
+	title.position = title_area.position + (title_area.size - measured * factor) * .5
 	# The direct next-layer preview stays above the parent to preserve requested
 	# readability, while every covered title uses the master fitting formula.
 	var native_control: Control = group.container_panel if covered else group.label
