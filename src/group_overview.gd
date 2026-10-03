@@ -450,75 +450,94 @@ func _update_native_previews() -> void:
 	for identifier in _native_resolutions.keys():
 		if not roots.has(identifier):
 			_native_resolutions.erase(identifier)
-	var key := [_layout_revision, stage.document_revision, roots, resolutions]
-	if key != _native_preview_key:
-		_native_preview_key = key
-		for identifier in _native_previews:
-			if is_instance_valid(_native_previews[identifier].view):
-				_native_previews[identifier].view.queue_free()
-			_native_previews[identifier].image.queue_free()
-		_native_previews.clear()
-		for identifier in roots:
-			var rect: Rect2 = _group_rects[identifier]
-			var factor := float(_native_resolutions[identifier]) / maxf(rect.size.x, rect.size.y)
-			var view := SubViewport.new()
-			view.name = "NativeGroupCache"
-			view.disable_3d = true
-			view.world_2d = World2D.new()
-			view.transparent_bg = true
-			view.size = Vector2i((rect.size * factor).ceil()).max(Vector2i.ONE)
-			view.render_target_update_mode = SubViewport.UPDATE_ONCE
-			add_child(view)
-			for object in _objects:
-				var object_id: int = object.get_instance_id()
-				if object_id != identifier and not _cover_groups.get(object_id, []).has(identifier):
-					continue
-				if object is TextNode:
-					var control: Control = object.container_panel if object._container_active else object.label
-					var body := Panel.new()
-					body.mouse_filter = Control.MOUSE_FILTER_IGNORE
-					body.set_anchors_preset(Control.PRESET_TOP_LEFT)
-					body.size = control.size
-					var native_style := Corners.source(control.get_theme_stylebox("panel" if object._container_active else "normal"))
-					if native_style != null:
-						var style := native_style.duplicate() as StyleBoxFlat
-						style.set_border_width_all(maxi(style.border_width_top, ceili(1.25 / _frame_scale)))
-						body.add_theme_stylebox_override("panel", style)
-					view.add_child(body)
-					body.position = control.global_position
-					body.rotation = control.get_global_transform().get_rotation()
-					body.scale = control.get_global_transform().get_scale()
-					body.z_index = 0 if object._container_active else 2
-				elif object is LineEdge:
-					var line := Line2D.new()
-					var from := LineEdge.connection_rect(object.source, object.target)
-					var to := LineEdge.connection_rect(object.target, object.source)
-					var anchors := LineEdge.connection_uvs(from, to)
-					var head_length := LineEdge.arrow_length(from, to, anchors, object.stroke_width) if object.show_arrow else 0.0
-					line.points = LineEdge.connection_curve(from, to, anchors, maxi(48, object.curve_segments * 2), head_length, true)
-					line.default_color = object.display_stroke_color()
-					line.width = maxf(object.stroke_width, 1.25 / _frame_scale)
-					line.antialiased = true
-					line.z_index = 1
-					view.add_child(line)
-					if object.show_arrow:
-						var head := Polygon2D.new()
-						head.position = LineEdge.anchor(to, anchors[1])
-						head.rotation = (-anchors[3]).angle()
-						head.polygon = PackedVector2Array([Vector2.ZERO, Vector2(-head_length, -head_length * .4), Vector2(-head_length, head_length * .4)])
-						head.color = line.default_color
-						head.z_index = 1
-						view.add_child(head)
-			view.canvas_transform = Transform2D(0.0, Vector2.ONE * factor, 0.0, -rect.position * factor)
-			var image := Sprite2D.new()
-			image.texture = view.get_texture()
-			image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
-			image.position = to_local(rect.get_center())
-			image.scale = rect.size / Vector2(view.size)
-			image.z_index = 66
-			add_child(image)
-			_native_previews[identifier] = {"view":view, "image":image, "rect":rect}
-			_freeze_preview_texture.call_deferred(_native_previews[identifier])
+	var key := [_layout_revision, stage.document_revision, roots, resolutions, _preview_nodes.keys()]
+	if key == _native_preview_key:
+		for data in _native_previews.values():
+			data.image.visible = stage.world_view_rect.intersects(data.rect, true)
+		return
+	_native_preview_key = key
+	# A resolution/membership change only rebuilds affected group textures.
+	for identifier in _native_previews.keys():
+		if roots.has(identifier):
+			continue
+		var cached: Dictionary = _native_previews[identifier]
+		if is_instance_valid(cached.view):
+			cached.view.queue_free()
+		cached.image.queue_free()
+		_native_previews.erase(identifier)
+	for identifier in roots:
+		var rect: Rect2 = _group_rects[identifier]
+		var borderless := []
+		for child_id in _preview_nodes:
+			if child_id != identifier and _cover_groups.get(child_id, []).has(identifier):
+				borderless.append(child_id)
+		var content_key := [_layout_revision, stage.document_revision, _native_resolutions[identifier], borderless]
+		if _native_previews.has(identifier):
+			var cached: Dictionary = _native_previews[identifier]
+			if cached.get("content_key", []) == content_key:
+				continue
+			if is_instance_valid(cached.view):
+				cached.view.queue_free()
+			cached.image.queue_free()
+		var factor := float(_native_resolutions[identifier]) / maxf(rect.size.x, rect.size.y)
+		var view := SubViewport.new()
+		view.name = "NativeGroupCache"
+		view.disable_3d = true
+		view.world_2d = World2D.new()
+		view.transparent_bg = true
+		view.size = Vector2i((rect.size * factor).ceil()).max(Vector2i.ONE)
+		view.render_target_update_mode = SubViewport.UPDATE_ONCE
+		add_child(view)
+		for object in _objects:
+			var object_id: int = object.get_instance_id()
+			if object_id != identifier and not _cover_groups.get(object_id, []).has(identifier):
+				continue
+			if object is TextNode:
+				var control: Control = object.container_panel if object._container_active else object.label
+				var body := Panel.new()
+				body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				body.set_anchors_preset(Control.PRESET_TOP_LEFT)
+				body.size = control.size
+				var native_style := Corners.source(control.get_theme_stylebox("panel" if object._container_active else "normal"))
+				if native_style != null:
+					var style := native_style.duplicate() as StyleBoxFlat
+					style.set_border_width_all(maxi(style.border_width_top, ceili(1.25 / _frame_scale)))
+					body.add_theme_stylebox_override("panel", style)
+				view.add_child(body)
+				body.position = control.global_position
+				body.rotation = control.get_global_transform().get_rotation()
+				body.scale = control.get_global_transform().get_scale()
+				body.z_index = 0 if object._container_active else 2
+			elif object is LineEdge:
+				var line := Line2D.new()
+				var from := LineEdge.connection_rect(object.source, object.target)
+				var to := LineEdge.connection_rect(object.target, object.source)
+				var anchors := LineEdge.connection_uvs(from, to)
+				var head_length := LineEdge.arrow_length(from, to, anchors, object.stroke_width) if object.show_arrow else 0.0
+				line.points = LineEdge.connection_curve(from, to, anchors, maxi(48, object.curve_segments * 2), head_length, true)
+				line.default_color = object.display_stroke_color()
+				line.width = maxf(object.stroke_width, 1.25 / _frame_scale)
+				line.antialiased = true
+				line.z_index = 1
+				view.add_child(line)
+				if object.show_arrow:
+					var head := Polygon2D.new()
+					head.position = LineEdge.anchor(to, anchors[1])
+					head.rotation = (-anchors[3]).angle()
+					head.polygon = PackedVector2Array([Vector2.ZERO, Vector2(-head_length, -head_length * .4), Vector2(-head_length, head_length * .4)])
+					head.color = line.default_color
+					head.z_index = 1
+					view.add_child(head)
+		view.canvas_transform = Transform2D(0.0, Vector2.ONE * factor, 0.0, -rect.position * factor)
+		var image := Sprite2D.new()
+		image.texture = view.get_texture()
+		image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+		image.position = to_local(rect.get_center())
+		image.scale = rect.size / Vector2(view.size)
+		image.z_index = 66
+		add_child(image)
+		_native_previews[identifier] = {"view":view, "image":image, "rect":rect, "content_key":content_key}
+		_freeze_preview_texture.call_deferred(_native_previews[identifier])
 	for data in _native_previews.values():
 		data.image.visible = stage.world_view_rect.intersects(data.rect, true)
 
