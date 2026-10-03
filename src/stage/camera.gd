@@ -36,6 +36,8 @@ var is_panning: bool = false
 
 
 func _ready() -> void:
+	if grid_material:
+		grid_material.shader = preload("res://src/stage/grid.gdshader")
 	zoom = Vector2.ONE * REFERENCE_ZOOM
 	target_zoom = zoom
 	target_position = global_position
@@ -158,6 +160,9 @@ func _process(delta: float) -> void:
 
 	# 4. 同步传递给 Shader
 	if grid_material:
+		var view := get_viewport()
+		var render_scale := view.get_final_transform().get_scale().abs()
+		grid_material.set_shader_parameter("render_scale", render_scale)
 		grid_material.set_shader_parameter("camera_offset", global_position)
 		grid_material.set_shader_parameter("camera_zoom", zoom)
 

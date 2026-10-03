@@ -1625,6 +1625,7 @@ func _generate() -> void:
 
 
 func _on_close_requested(container: Control) -> void:
+	container = tabs.tab_for_container(container)
 	_pending_close = container
 	tabs.current_tab = container.get_index()
 	$UIOverlay/UnsavedDialog.dialog_text = "「%s」有未保存的更改。" % str(container.get_meta("tab_title", "未命名"))
@@ -1634,7 +1635,7 @@ func _on_close_requested(container: Control) -> void:
 func _save_before_close() -> void:
 	if not is_instance_valid(_pending_close):
 		return
-	var stage := _pending_close.get_node("SubViewport/Stage") as Stage
+	var stage: Stage = tabs.stage_for_container(_pending_close)
 	if stage.current_file_path.is_empty():
 		tabs.request_save_as(stage)
 	else:
@@ -1654,7 +1655,7 @@ func _on_saved(path: String) -> void:
 	_toast("已保存 " + path.get_file())
 	_refresh_recent()
 	if is_instance_valid(_pending_close):
-		var stage := _pending_close.get_node("SubViewport/Stage") as Stage
+		var stage: Stage = tabs.stage_for_container(_pending_close)
 		if stage.current_file_path == path and not stage.is_dirty():
 			_discard_close()
 

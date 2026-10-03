@@ -154,8 +154,8 @@ func _save_next() -> void:
 		stage.finish_interaction()
 		if stage.current_file_path.is_empty():
 			_target = stage
-			save_dialog.title = "保存全部 — " + str(stage.get_parent().get_parent().get_meta("tab_title", "未命名"))
-			save_dialog.current_file = str(stage.get_parent().get_parent().get_meta("tab_title", "未命名")) + ".prg"
+			save_dialog.title = "保存全部 — " + str(tabs.tab_for_stage(stage).get_meta("tab_title", "未命名"))
+			save_dialog.current_file = str(tabs.tab_for_stage(stage).get_meta("tab_title", "未命名")) + ".prg"
 			save_dialog.popup_centered_ratio(0.7)
 			return
 		if not stage.save_to_file(stage.current_file_path):

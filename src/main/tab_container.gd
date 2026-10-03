@@ -6,6 +6,7 @@ signal close_requested(container: Control)
 signal workspace_error(message: String)
 signal workspace_saved(path: String)
 
+const StageView = preload("res://src/main/stage_view.gd")
 const STAGE := preload("uid://bc73att6xutyi")
 var tab_serial := 1
 var _save_target: Stage
@@ -42,13 +43,15 @@ func new_tab(title: String = "") -> Stage:
 	viewport.size_2d_override_stretch = true
 	viewport.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
 	viewport.add_child(stage)
-	var container := SubViewportContainer.new()
+	var container := StageView.new()
 	container.name = "StageTab%d" % tab_serial
+	container.clip_contents = true
 	container.set_meta("tab_title", title if not title.is_empty() else "未命名 %d" % tab_serial)
-	container.stretch = true
-	container.add_child(viewport)
-	container.resized.connect(_sync_viewport_size.bind(container, viewport))
-	_sync_viewport_size.call_deferred(container, viewport)
+	var canvas := SubViewportContainer.new()
+	canvas.name = "Canvas"
+	canvas.stretch = true
+	canvas.add_child(viewport)
+	container.add_child(canvas)
 	stage.file_error.connect(func(message): workspace_error.emit(message))
 	stage.file_saved.connect(_on_file_saved.bind(stage))
 	add_child(container)
@@ -59,17 +62,21 @@ func new_tab(title: String = "") -> Stage:
 	return stage
 
 
-func _sync_viewport_size(container: Control, viewport: SubViewport) -> void:
-	if not is_instance_valid(container) or not is_instance_valid(viewport):
-		return
-	if not (container is SubViewportContainer and (container as SubViewportContainer).stretch):
-		var new_size := Vector2i(container.size.round()).max(Vector2i(1, 1))
-		if viewport.size != new_size:
-			viewport.size = new_size
-	var stage := viewport.get_node_or_null("Stage") as Stage
-	if stage != null and stage.is_node_ready():
-		stage.camera.global_position = stage.camera.target_position
-		stage.camera.zoom = stage.camera.target_zoom
+func tab_for_container(container: Control) -> Control:
+	if not is_instance_valid(container):
+		return null
+	if container != null and container.get_parent() != self and container.get_parent() is Control:
+		return container.get_parent() as Control
+	return container
+
+
+func stage_for_container(container: Control) -> Stage:
+	container = tab_for_container(container)
+	return container.get_node_or_null("Canvas/SubViewport/Stage") as Stage if container != null else null
+
+
+func tab_for_stage(stage: Stage) -> Control:
+	return tab_for_container(stage.get_parent().get_parent() as Control)
 
 
 func stages() -> Array[Stage]:
@@ -83,7 +90,7 @@ func stages() -> Array[Stage]:
 
 func get_stage(index: int) -> Stage:
 	var container := get_tab_control(index)
-	return container.get_node_or_null("SubViewport/Stage") as Stage if container != null else null
+	return stage_for_container(container)
 
 
 func get_current_stage() -> Stage:
@@ -112,6 +119,7 @@ func close_tab(index: int) -> void:
 
 
 func close_container(container: Control) -> void:
+	container = tab_for_container(container)
 	if not is_instance_valid(container) or container.get_parent() != self:
 		return
 	var index := container.get_index()
@@ -187,7 +195,7 @@ func save_current_file_as(path: String) -> void:
 
 
 func _on_file_saved(path: String, stage: Stage) -> void:
-	var container := stage.get_parent().get_parent()
+	var container := tab_for_stage(stage)
 	container.set_meta("tab_title", path.get_file())
 	GraphPreferences.remember(path)
 	_update_tab_titles()
