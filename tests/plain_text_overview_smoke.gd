@@ -12,9 +12,13 @@ func _run() -> void:
 	stage = app.tabs.get_current_stage()
 	stage.apply_preferences()
 	stage.camera.set_process(false)
+	stage.camera.position = Vector2.ZERO
+	stage.camera.target_position = Vector2.ZERO
 	var branch := make_node("文本节点", Vector2(-700, 0))
 	branch.fill_color = Color("#f38ba8")
+	branch.font_size = 100
 	var leaf := make_node("按Enter键", Vector2(-500, 300))
+	leaf.font_size = 100
 	stage.connect_entities(branch, leaf)
 	var group := make_node("真实分组", Vector2(700, 0))
 	make_node("分组内节点", Vector2(900, 300), group)
@@ -22,19 +26,26 @@ func _run() -> void:
 	await zoom_to(2.0)
 	check(not branch._container_active and group._container_active, "Graph branches remain text nodes; spatial containers are groups")
 	var before := JSON.stringify(StageObjectRegistry.capture(stage))
-	await zoom_to(.08)
 	var overview = stage.group_overview
+	overview.camera_scale_threshold = 1.0
+	overview.viewport_size_ratio = 1.0
+	overview.invalidate()
+	await zoom_to(.08)
 	for entity in [branch, leaf, group]:
 		check(overview._summaries.has(entity.get_instance_id()), "Overview includes the expected title")
 		if not overview._summaries.has(entity.get_instance_id()):
 			continue
 		var panel: Panel = overview._summaries[entity.get_instance_id()]
 		var style = preload("res://src/main/continuous_corners.gd").source(panel.get_theme_stylebox("panel"))
-		var border := panel.get_node("Border") as Line2D
+		var border := panel.get_node_or_null("Border") as Line2D
 		if entity._container_active:
-			check(style.draw_center and style.bg_color.a > 0 and style.border_width_top > 0, "Actual groups retain their overview frame")
+			check(style.draw_center and style.bg_color == entity.display_fill_color() and style.border_width_top > 0, "Actual groups retain their overview frame")
 		else:
-			check(not style.draw_center and style.bg_color.a == 0 and style.border_width_top == 0 and not border.visible, "Plain text root and next-layer titles have no fill or thumbnail border")
+			check(style.border_width_top == 0 and (border == null or not border.visible), "Plain text root and next-layer titles have no extra thumbnail border")
+			if entity.fill_color.a > 0.0:
+				check(style.draw_center and style.bg_color == entity.fill_color, "Existing text backgrounds retain their original color and opacity")
+			else:
+				check(not style.draw_center and style.bg_color.a == 0, "Unfilled text receives no thumbnail background")
 			check(panel.get_node("Title").visible, "Plain text titles remain visible")
 	check(JSON.stringify(StageObjectRegistry.capture(stage)) == before, "Presentation does not change saved objects")
 	if DisplayServer.get_name() != "headless":

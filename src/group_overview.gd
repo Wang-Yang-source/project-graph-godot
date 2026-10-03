@@ -421,29 +421,13 @@ func _rebuild_preview_links() -> void:
 func _preview_display_rect(identifier: int) -> Rect2:
 	var object: TextNode = _preview_nodes[identifier]
 	var rect: Rect2 = _group_rects[identifier] if _group_rects.has(identifier) else object.aabb
-	if not _preview_roots.has(identifier) and not object._container_active:
+	if not object._container_active:
 		var original: Rect2 = _entity_rects[identifier] if _entity_rects.has(identifier) else object.aabb
 		# Keep immediate leaf titles readable when their original glyph box shrinks.
-		var size := original.size.max(Vector2(48, 24) / _frame_scale)
+		var size := original.size if object.fill_color.a > 0.0 else original.size.max(Vector2(48, 24) / _frame_scale)
 		return Rect2(original.get_center() - size * .5, size)
-	if object._container_active:
-		# Match Panel zoom buckets so endpoints follow its exact visible boundary.
-		var scale := _frame_scale
-		var offset := float(posmod(object.id.hash(), 16)) / 16.0
-		var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
-		var cache_key := [rect, pixel_scale, _preview_roots.has(identifier)]
-		var cached: Dictionary = _display_rect_cache.get(identifier, {})
-		if cached.get("key", []) == cache_key:
-			return cached.rect
-		var size := rect.size
-		if not _preview_roots.has(identifier):
-			size = size.min(Vector2(160, 80) / pixel_scale)
-		# A long, thin group still needs enough height for a visible curved end.
-		if _preview_roots.has(identifier) and not is_instance_valid(object.container) and maxf(size.x, size.y) * pixel_scale >= 20.0:
-			size = size.max(Vector2(24, 24) / pixel_scale)
-		var result := Rect2(rect.get_center() - size * .5, size)
-		_display_rect_cache[identifier] = {"key":cache_key, "rect":result}
-		return result
+	# Preserve group bounds, center and aspect ratio; the camera supplies uniform zoom.
+
 	return rect
 
 
@@ -579,7 +563,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var rect: Rect2 = _preview_display_rect(identifier) if _preview_nodes.has(identifier) else (_group_rects[identifier] if _group_rects.has(identifier) else group.aabb)
 	var scale := _frame_scale
 	var screen_size := rect.size * scale
-	var covered := root or group._container_active
+	var covered := group._container_active
 	# Below legible size, omit tiny frames as well as text to reduce overlap.
 	var readable := maxf(screen_size.x, screen_size.y) >= 20.0 if covered else screen_size.x >= 28.0 and screen_size.y >= 18.0
 	panel.set_meta("view_rect", rect)
@@ -599,11 +583,11 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var light := group._display_theme_is_light()
 	var canvas_color := Palette.color(light, "surface.canvas")
 	var fill := group.fill_color
-	var background := Color(canvas_color if fill.a == 0 else fill, .5) if covered else fill
+	var background := group.display_fill_color() if covered else fill
 	if not covered and fill.a == 0 and group.font_size * pixel_scale < 5.0:
 		background = Color((Palette.LATTE if light else Palette.MOCHA)["surface2"], .2)
-	var border_color := Color((Palette.LATTE if light else Palette.MOCHA)["surface2"])
-	var text_background := fill if group._container_active and fill.a == 1.0 else canvas_color
+	var border_color := group.display_border_color()
+	var text_background := fill if fill.a == 1.0 else canvas_color
 	var brightness := .2126 * text_background.r + .7152 * text_background.g + .0722 * text_background.b
 	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
 	var text := group.text.replace("\n", " ")
@@ -645,18 +629,21 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	title.size = Vector2(measured.x, _summary_font.get_height(TITLE_FONT_SIZE))
 	title.scale = Vector2.ONE * factor
 	title.position = (panel.size - title.size * factor) * .5
-	if root and not _preview_children.get(identifier, []).is_empty():
+	if root and group._container_active and not _preview_children.get(identifier, []).is_empty():
 		# Reserve the body for next-layer titles rather than enlarging the parent over them.
 		title.position.y = minf(title.position.y, 4.0 * pixel_scale / scale)
 	# The direct next-layer preview stays above the parent to preserve requested
 	# readability, while every covered title uses the master fitting formula.
-	var radius := Corners.fitted_radius(panel.size, 14.0 if covered else 6.0, 2.0 if covered else 1.0)
+	var native_control: Control = group.container_panel if covered else group.label
+	var native_style := Corners.source(native_control.get_theme_stylebox("panel" if covered else "normal"))
+	var native_transform := stage.global_transform.affine_inverse() * native_control.get_global_transform()
+	var radius := float(native_style.corner_radius_top_left) * native_transform.get_scale().abs().x * pixel_scale if native_style != null else 0.0
 	var framed := group._container_active
 	var style_key := [background, border_color, radius, framed, covered, root]
 	if panel.get_meta("style_key", []) != style_key:
 		var style := StyleBoxFlat.new()
-		style.bg_color = background if framed else Color.TRANSPARENT
-		style.draw_center = framed
+		style.bg_color = background if framed else fill
+		style.draw_center = framed or fill.a > 0.0
 		style.border_color = border_color
 		style.set_border_width_all(1 if framed and covered else 0)
 		panel.add_theme_stylebox_override("panel", Corners.style(style, radius, true, true))
