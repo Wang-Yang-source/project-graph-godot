@@ -398,44 +398,37 @@ func _local_entries(delta: float) -> Array[Dictionary]:
 	var regions: Array[Rect2] = []
 	var sibling_layers := {}
 	_local_movable.clear()
-	var space := get_world_2d().direct_space_state
 	for key in _drivers.keys():
 		var driver := instance_from_id(key) as Entity
 		if not is_instance_valid(driver) or driver.is_queued_for_deletion():
 			_drivers.erase(key)
 			continue
 		sibling_layers[driver.container] = true
-		var rect := driver.aabb
-		if driver.drag_controlled:
-			var destination := rect
-			destination.position += driver._drag_target - driver.global_position
-			rect = rect.merge(destination)
-		rect = rect.grow(influence_distance + maximum_speed * delta * 2.0)
-		regions.append(rect)
 		bodies[driver.get_instance_id()] = driver
-		_query_shape.size = rect.size.max(Vector2.ONE)
-		_query.transform = Transform2D(0.0, rect.get_center())
-		for hit in space.intersect_shape(_query, 4096):
-			var body: Variant = hit.collider
-			if body is Entity and not body is PenStroke and body.get_parent() == target_root and body.container == driver.container and body.is_visible_in_tree() and not body.is_queued_for_deletion():
-				bodies[body.get_instance_id()] = body
-	# Captions are edge surfaces. If one meets the gesture, its endpoints must
-	# participate even when the endpoints themselves lie outside the query.
-	for edge in _local_edges:
-		if not is_instance_valid(edge) or edge.is_queued_for_deletion() or not edge.is_visible_in_tree() or not is_instance_valid(edge.source) or not is_instance_valid(edge.target):
-			continue
-		if edge.source.container != edge.target.container:
-			continue
-		var layer: Entity = edge.source.container
-		if not sibling_layers.has(layer):
-			continue
-		if bodies.has(edge.source.get_instance_id()) or bodies.has(edge.target.get_instance_id()):
-			edge.refresh_for_physics()
-		var caption := edge.caption_rect()
-		if not caption.has_area() or not regions.any(func(region: Rect2) -> bool: return region.intersects(caption, true)):
-			continue
-		for endpoint in [edge.source, edge.target]:
-			bodies[endpoint.get_instance_id()] = endpoint
+	# Follow physical contact, not graph links: each displaced neighbour must
+	# discover the next neighbour before being allowed to push into it.
+	var queried := {}
+	var included_captions := {}
+	while true:
+		_expand_local_contacts(bodies, regions, queried, delta)
+		var previous_size := bodies.size()
+		for edge in _local_edges:
+			if not is_instance_valid(edge) or edge.is_queued_for_deletion() or not edge.is_visible_in_tree() or not is_instance_valid(edge.source) or not is_instance_valid(edge.target):
+				continue
+			if included_captions.has(edge.get_instance_id()) or edge.source.container != edge.target.container:
+				continue
+			if not sibling_layers.has(edge.source.container):
+				continue
+			if bodies.has(edge.source.get_instance_id()) or bodies.has(edge.target.get_instance_id()):
+				edge.refresh_for_physics()
+			var caption := edge.caption_rect()
+			if not caption.has_area() or not regions.any(func(region: Rect2) -> bool: return region.intersects(caption, true)):
+				continue
+			included_captions[edge.get_instance_id()] = true
+			for endpoint in [edge.source, edge.target]:
+				bodies[endpoint.get_instance_id()] = endpoint
+		if bodies.size() == previous_size:
+			break
 	for key in bodies:
 		_local_movable[key] = true
 		if (not _pin_drivers or not _drivers.has(key)) and not _local_origins.has(key):
@@ -472,6 +465,35 @@ func _local_entries(delta: float) -> Array[Dictionary]:
 		weights[edge.target] = weights.get(edge.target, 0.0) + fraction
 		entries.append({"body": edge, "rect": rect, "container": container, "weights": weights})
 	return entries
+
+
+func _expand_local_contacts(bodies: Dictionary, regions: Array[Rect2], queried: Dictionary, delta: float) -> void:
+	var queue: Array = bodies.values()
+	var cursor := 0
+	var space := get_world_2d().direct_space_state
+	while cursor < queue.size():
+		var body: Entity = queue[cursor]
+		cursor += 1
+		var key := body.get_instance_id()
+		if queried.has(key):
+			continue
+		queried[key] = true
+		var rect := body.aabb
+		var destination := rect
+		destination.position += body._drag_target - body.global_position if body.drag_controlled else body.linear_velocity * delta * 2.0
+		rect = rect.merge(destination).grow(influence_distance + maximum_speed * delta * 2.0)
+		regions.append(rect)
+		_query_shape.size = rect.size.max(Vector2.ONE)
+		_query.transform = Transform2D(0.0, rect.get_center())
+		for hit in space.intersect_shape(_query, 4096):
+			var neighbour: Variant = hit.collider
+			if not neighbour is Entity or neighbour is PenStroke or neighbour.get_parent() != target_root or neighbour.container != body.container or not neighbour.is_visible_in_tree() or neighbour.is_queued_for_deletion():
+				continue
+			var neighbour_key: int = neighbour.get_instance_id()
+			if bodies.has(neighbour_key):
+				continue
+			bodies[neighbour_key] = neighbour
+			queue.append(neighbour)
 
 
 func _bound_local_motion(delta: float) -> void:
