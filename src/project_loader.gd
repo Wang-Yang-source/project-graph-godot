@@ -38,7 +38,6 @@ var _status: Label
 var _elapsed := 0.0
 var _last_reveal := 0.0
 var _started_usec := 0
-var _reveal_index := 0
 var _view_finished_usec := 0
 
 
@@ -175,17 +174,15 @@ func _build_batch(stage: Node) -> void:
 		var object: StageObject = entry.object
 		var panel: Variant = stage.group_overview._summaries.get(object.get_instance_id())
 		if panel != null or not stage.group_overview.is_hidden(object):
-			var seconds := (Time.get_ticks_usec() - _started_usec) / 1000000.0
-			var scheduled := 2.2 * float(_reveal_index) / maxf(1, _result.plan.visible_count - 1)
-			var delay := maxf(0, scheduled - seconds)
-			_reveal_index += 1
+			# Reveal each completed batch immediately; animation never queues a whole document.
+			var delay := 0.0
 			if panel != null:
 				_fade(panel, delay)
 			else:
 				_reveal(object, bool(entry.reverse), delay)
 			_last_reveal = maxf(_last_reveal, _elapsed + delay + REVEAL_SECONDS * 2.0)
 	if _cursor >= _result.plan.visible_count and _view_finished_usec == 0:
-		_view_finished_usec = maxi(Time.get_ticks_usec(), _started_usec + 2400000)
+		_view_finished_usec = Time.get_ticks_usec()
 		stage.set_meta("load_view_complete_usec", _view_finished_usec - _started_usec)
 	_status.text = ("正在展开 %d / %d" if _cursor < _result.plan.visible_count else "正在准备编辑 %d / %d") % [_cursor, _ordered.size()]
 	if _cursor == _ordered.size():
