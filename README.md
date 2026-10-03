@@ -9,4 +9,6 @@
 - [开发任务顺序](docs/development/implementation-plan.md)
 - [仓库操作规则](AGENTS.md)
 
+后端代码、账号与云文件接口、测试及部署脚本位于同级独立仓库 [project-server](../project-server/README.md)。
+
 发布操作保留在 [Linux 打包说明](packaging/linux/README.md) 和 [Windows 打包说明](packaging/windows/README.md)。这些是平台操作资料，不代表当前环境已完成发布验证。
