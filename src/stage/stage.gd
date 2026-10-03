@@ -40,6 +40,9 @@ var _marquee_active := false
 var _marquee_toggle := false
 var _marquee_original_ids := PackedStringArray()
 var _stroke: PenStroke
+var _mouse_resize_active := false
+var _mouse_resize_remaining := 0.0
+var _mouse_resize_ids := PackedStringArray()
 
 
 
@@ -121,6 +124,10 @@ func _input(event: InputEvent) -> void:
 
 
 func _process(_delta: float) -> void:
+	if _mouse_resize_active:
+		_mouse_resize_remaining -= _delta
+		if _mouse_resize_remaining <= 0.0:
+			finish_mouse_resize()
 	var canvas := get_global_transform_with_canvas()
 	var viewport_rect := get_viewport_rect()
 	var view_key := [canvas, viewport_rect]
@@ -357,6 +364,7 @@ func delete_objects(objects: Array[StageObject], preserve_contents := false) -> 
 
 
 func finish_interaction() -> void:
+	finish_mouse_resize()
 	$EntityLayerMover.cancel()
 	$LineEdgeCreator.cancel_drag()
 	$StageObjectSlicer._cancel_slice()
@@ -613,3 +621,48 @@ func object_counts() -> Vector2i:
 				_counts.y += 1
 		_counts_revision = layout_revision
 	return _counts
+
+
+func resize_text_at(world_point: Vector2, steps: float) -> void:
+	if is_loading or history._busy or is_zero_approx(steps):
+		return
+	var hovered: Entity = $LineEdgeCreator._get_entity_at(world_point)
+	if not hovered is TextNode:
+		return
+	var targets: Array[TextNode] = []
+	if selected_ids.has(hovered.id):
+		for object in selected_objects():
+			if object is TextNode:
+				targets.append(object as TextNode)
+	else:
+		targets.append(hovered as TextNode)
+	var ids := PackedStringArray()
+	var changed: Array[TextNode] = []
+	var factor: float = pow(2.0, steps * 0.5)
+	for node in targets:
+		ids.append(node.id)
+		if clampi(roundi(node.font_size * factor), 8, 512) != node.font_size:
+			changed.append(node)
+	if changed.is_empty():
+		return
+	if _mouse_resize_active and ids != _mouse_resize_ids:
+		finish_mouse_resize()
+	if not _mouse_resize_active:
+		finish_text_editing()
+		history.begin_transaction()
+		_mouse_resize_active = true
+		_mouse_resize_ids = ids
+	for node in changed:
+		node.font_size = clampi(roundi(node.font_size * factor), 8, 512)
+		$NodeRepulsion.begin_local_edit([node], false)
+	_mouse_resize_remaining = 0.25
+	document_changed.emit()
+
+
+func finish_mouse_resize() -> void:
+	if not _mouse_resize_active:
+		return
+	_mouse_resize_active = false
+	_mouse_resize_remaining = 0.0
+	_mouse_resize_ids.clear()
+	history.commit()
