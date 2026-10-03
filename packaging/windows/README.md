@@ -1,63 +1,88 @@
-# Windows 安装包
+# Windows 安装包（NSIS）
 
-当前发布版本为 0.1.21，目标为 Windows x64。复用 Godot 官方 Windows Desktop Release 模板和已有 Inno Setup 安装器，不引入新的运行时库。Release 模板关闭调试开销；保留项目现有 Compatibility 渲染器，未做未经测量的渲染器切换。脚本使用现有二进制导出模式，PCK 嵌入 EXE，并排除测试、开发插件、文档和构建目录。安装器压缩只影响安装过程，不对安装后的程序施加运行时压缩。
+Project Graph 0.1.21 / Windows x64。Linux 使用 **NSIS 3.11 + Modern UI 2**
+直接生成 Windows 安装 EXE，不需要 Wine 或 Inno Setup。复用 NSIS 自带向导、
+文件压缩、快捷方式、注册表和卸载功能，不引入皮肤 DLL 或应用运行时依赖。
 
 ## 构建
 
-所有 Godot 文件操作和导出进程必须通过 Godot MCP 执行，不直接编辑项目配置或场景。
-
-1. 安装匹配的 Godot 4.8.dev6 Windows Desktop 模板，不能复用 4.7.2 模板。
-2. 通过 MCP 备份 `project.godot` 原始内容；仅在磁盘上的导出配置中临时移除 `autoload/MCPRuntimeProbe`，清空 `editor_plugins/enabled`。导出后无论成功或失败都恢复原始内容，避免发布包引用已排除的 addons。
-3. 通过 MCP 启动 Godot `--headless --path <项目路径> --export-release "Windows Desktop" "<项目路径>/builds/windows/Project Graph.exe"`，保存输出和退出码。不要运行导出程序或测试，除非用户另行授权。
-4. 使用 Inno Setup 6.7.3 编译 `ProjectGraph.iss`：`ISCC.exe /DAppVersion=0.1.21 packaging/windows/ProjectGraph.iss`。Linux 构建机可用 Wine 执行编译器。
-5. 产物为 `builds/installer/ProjectGraph-Setup-0.1.21.exe`。版本更新时同步 Godot 项目版本、EXE 元数据和安装器参数。不要对嵌入 PCK 的 EXE 使用 strip 或 UPX。
-
-工具固定来源及 SHA-256：
-
-- [Godot 4.8-dev6 官方模板](https://github.com/godotengine/godot-builds/releases/tag/4.8-dev6)，`Godot_v4.8-dev6_export_templates.tpz`：`b3cff9b3756fbcf2adefb374bdec7f1b7221fd1d17218606ab19be95f0048a06`。Godot 使用 MIT 许可证，模板必须与编辑器版本匹配。
-- [Inno Setup 6.7.3](https://github.com/jrsoftware/issrc/releases/tag/is-6_7_3)，`innosetup-6.7.3.exe`：`9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`。随包许可证允许商业使用和分发；编译器仅用于打包，不增加应用运行时依赖。
-
-安装器创建开始菜单快捷方式，可选桌面快捷方式，并注册当前用户的 `.prg` 文件关联。限定 x64 兼容系统，普通用户即可安装。未配置代码签名。
-
-## 手动验收（尚未执行）
-
-1. 在 Windows x64 上双击安装包，按向导安装并选择桌面快捷方式。应完成安装，开始菜单和桌面入口均可启动程序；失败时检查安装路径、权限和 EXE 是否完整。
-2. 打开包含大量节点和嵌套容器的文档，连续拖拽、缩放和编辑文本。应保持响应、正常显示字体与图标；失败时关注首次启动日志、资源缺失、显卡驱动以及卡顿发生的具体操作。本次未测量 Windows 性能。
-3. 双击路径含中文和空格的 `.prg` 文件，应直接打开对应文档。失败时检查当前用户文件关联及带引号的启动参数。
-4. 保存后关闭、重新打开文档，内容应保留。卸载后快捷方式应移除，用户文档应保留；失败时检查卸载清理范围。
-
-品牌资源位于 `packaging/windows/assets`：`wizard-light.svg` 和 `wizard-dark.svg`
-是可编辑源稿，通过 MCP 使用 ImageMagick 生成同名 PNG；`brand-mark.png` 和
-`project-graph.ico` 从项目现有图标生成。欢迎页和完成页使用高分辨率的紫色节点
-插画，其他页面显示品牌图标。`preview.png` 仍为可选应用资源。
-
-本次构建：Godot Release 导出退出码 0，导出日志无错误或警告；Inno Setup 6.7.3 编译成功，配置变更通过空白格式检查。使用 Godot MCP 的项目信息、设置查询和编辑器脚本类别完成模板安装、导出配置、进程启动与原始配置恢复；安装器由 Wine 执行官方编译器。未执行自动测试、安装器运行、Windows 实机启动或性能测试。
-
-## 2026-10-03 圆角安装器交付
-
-复用 [Inno Setup 内置 Windows 11 风格和动态明暗模式](https://jrsoftware.org/ishelp/topic_setup_wizardstyle.htm)，
-不引入皮肤 DLL 或额外运行时。Pascal 标准语言没有窗口圆角功能；使用
-[Windows DWM 圆角 API](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_window_corner_preference)
-设置 Windows 11 原生圆角，旧系统使用 GDI 圆角区域回退。安装与卸载窗口都应用
-该设置。GDI 区域成功设置后归 Windows 管理，失败时释放。系统在最大化、远程
-桌面等情况下是否呈现 DWM 圆角，以实机表现为准。
-
-从当前工作区重新导出 0.1.21，不包含未保存的编辑器内容。保持版本不变，增加
-日期后缀区分旧产物：
+Godot 项目、资源操作和导出必须通过 Godot MCP 执行。现有 Windows Release
+导出为 `builds/windows/Project Graph.exe`，PCK 嵌入 EXE；也兼容独立同名 PCK。
+安装器默认版本必须与应用版本一致，更新版本时显式传入 `--version`。
 
 ```sh
-ISCC.exe /DAppVersion=0.1.21 /DBuildSuffix=-20261003 packaging/windows/ProjectGraph.iss
+python3 packaging/windows/build_installer.py --version 0.1.21
 ```
 
-产物：`builds/installer/ProjectGraph-Setup-0.1.21-20261003.exe`，51,903,273 字节。
-SHA-256：`9e7686453c9a6c90fe778247267b995a75e3a81962ec3b5bd713ceeacc6ec11b`。
-Godot Release 导出及 Inno 编译退出码均为 0。导出期间临时禁用 shader baker、
-开发插件及 MCP 自动加载，设置应用品牌图标；随后恢复原有项目配置与预设。
-Godot 文件及品牌资源由 MCP 的项目查询和编辑器脚本类别处理。
+该命令在 Linux x86_64 上下载固定的 Fedora NSIS RPM，验证 SHA-256 后解包至
+用户缓存，无需 sudo；需要 Python 3.11+、`rpm2cpio` 和 `cpio`。编译器依赖
+glibc、libstdc++、zlib 和 libgcc，当前 Fedora 44 可用；旧发行版可能需要自行提供
+兼容的 NSIS 3.11，并使用 `--makensis /path/to/makensis --nsis-dir /path/to/share/nsis`。
+工具链固定在 `nsis-toolchain.lock.json`，来源为 Fedora 官方 Koji。
+Python 构建脚本仅使用标准库；版本和哈希均已固定，不安装 Python 依赖。
 
-未运行自动测试、安装器或 Windows 应用。除上面的安装、文件关联与卸载验收外，
-请在 Windows 10/11 分别双击安装包，检查欢迎页插画、四角、标题栏关闭按钮，
-切换页面并完成安装；再运行卸载程序检查圆角及按钮。分别切换系统明暗主题后
-重新打开安装包，检查文字可读性；在 100% 和 200% 缩放下检查插画清晰度、
-按钮和页面是否被裁切。失败时优先记录系统版本、DPI、主题、出错页面，检查
-窗口区域与 DWM 回退行为。未配置代码签名。
+输出：`builds/installer/ProjectGraph-Setup-0.1.21-nsis.exe` 、`.exe.sha256` 和 `.exe.licenses.txt`。
+可用 `--export-dir` 指定导出目录、`--output` 指定安装包路径。编译既有导出不会
+重新导出 Godot，不代表安装包包含编辑器尚未保存或尚未导出的改动。
+不要对嵌入 PCK 的 EXE 使用 strip 或 UPX。尚未配置代码签名。
+
+### Godot 导出
+
+1. 安装匹配的 Godot 4.8.dev6 Windows Desktop 模板，不能复用 4.7.2 模板。
+2. 通过 MCP 备份 `project.godot`，导出时临时移除 `autoload/MCPRuntimeProbe`，
+   清空开发插件；成功或失败都恢复原始配置，避免发布包引用排除的 addons。
+3. 通过 MCP 启动 Godot `--headless --path <项目路径> --export-release
+   "Windows Desktop" "<项目路径>/builds/windows/Project Graph.exe"`，保留退出码
+   和日志。保持现有 Compatibility 渲染器及 Release 导出配置。
+4. 通过 MCP 执行上述 Python 打包命令，供编译器读取导出和品牌图标。
+
+[Godot 官方 4.8-dev6 模板](https://github.com/godotengine/godot-builds/releases/tag/4.8-dev6)
+`Godot_v4.8-dev6_export_templates.tpz` SHA-256：
+`b3cff9b3756fbcf2adefb374bdec7f1b7221fd1d17218606ab19be95f0048a06`。
+Godot 使用 MIT 许可证，模板版本必须与编辑器匹配。
+
+## 安装与迁移
+
+- 当前用户安装至 `%LOCALAPPDATA%\Programs\Project Graph`，无需管理员权限。
+- 创建开始菜单入口；桌面快捷方式可选；`.prg` 关联可选且默认启用。
+- 注册 Windows“已安装的应用”卸载入口，升级使用已有安装路径。
+- 卸载只删除已知程序文件，不递归删除安装目录、用户文档或配置。
+  当前用户之前的 `.prg` 默认关联在卸载时恢复；其他程序接管关联后不覆盖。
+  Windows 用户选择的默认应用可能仍需在系统设置中确认。
+- 检测到旧 Inno 版本时中止并提示先在 Windows 设置中卸载。旧版卸载器可能
+  清理安装目录的 assets 子目录，迁移前应将用户文档保存在安装目录之外。
+- 使用项目已有品牌 ICO 和标准 MUI2 界面，启用 DPI aware。旧 Inno 的动态明暗
+  插画和自定义圆角代码不迁入；现有品牌源稿保留供后续设计使用。
+
+[NSIS 文档](https://nsis.sourceforge.io/Docs/Chapter2.html)支持 Linux 编译 Windows
+安装器；[Modern UI 2](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)
+为官方随附界面。NSIS 核心、标准插件和 MUI2 使用 Zlib 许可证，LZMA 压缩模块
+使用 CPL-1.0，详见[官方许可证](https://nsis.sourceforge.io/License)及工具链
+`root/usr/share/licenses/mingw-nsis-base/COPYING`。安装器是 Unicode x86 引导程序，
+可在 Windows x64 运行；应用仍为 x64，安装时拒绝 x86 系统。
+
+## 手动验收（未执行）
+
+1. 在 WinBoat Windows 中双击 `-nsis.exe`，按向导安装。应无需提权，开始菜单
+   能启动程序；选择桌面组件后桌面出现快捷方式。失败检查目录权限、文件被占用
+   和安装日志。升级时应沿用原安装目录；要改目录需先卸载。
+2. 分别用 100% 和 200% 缩放打开安装器，确认标题、文字、按钮均可读且无裁切。
+   失败记录 Windows 版本、DPI 和出错页面。
+3. 安装后双击路径含中文和空格的 `.prg` 文档，应打开对应文档；失败检查
+   Windows 默认应用选择及 HKCU 文件关联中的带引号命令。
+4. 先给 `.prg` 设置其他程序关联，再安装并卸载，应恢复之前的关联；安装后
+   另一个程序接管关联，再卸载 Project Graph，应保留新关联。
+5. 保存一份文档，退出应用并卸载。程序与快捷方式应移除，文档和用户配置应
+   保留；安装目录中自放的文件也应保留。失败检查卸载范围及文件占用。
+6. 已装旧 Inno 版本时运行新安装器，应提示先卸载且不修改旧安装。按提示卸载后
+   重试应成功，Windows 设置中应仅有一个 Project Graph 卸载入口。
+
+本次通过 Godot MCP 的项目查询与编辑器脚本类别读取项目版本并编译既有导出；
+未重新导出 Godot，未运行 Windows 安装器、卸载器、应用或性能测试。
+
+最终 NSIS 编译退出码 0，无警告；7-Zip 归档完整性检查通过。产物
+49,960,483 字节，SHA-256：
+`8d75d5ccb0c934ec581e90412737897f9cbb3168f2b14d42512aa10d1a52f28c`。
+Python 语法、工具链清单、无效版本输入拒绝及 Git 空白检查通过。
+工具许可证保留原文于 `NSIS-3.11-COPYING.txt` 并随构建产物输出；NSIS 3.11
+未修改源码可从[官方发布页](https://sourceforge.net/projects/nsis/files/NSIS%203/3.11/)取得。
