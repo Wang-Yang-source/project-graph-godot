@@ -175,7 +175,11 @@ func _process(_delta: float) -> void:
 		_target_rect = connection_rect(target, source)
 	var source_rect := _source_rect
 	var target_rect := _target_rect
-	var render_segments := clampi(ceili(curve_segments * sqrt(maxf(1.0, pixel_scale))), curve_segments, 512)
+	# Navigation must not rebuild the world curve, caption path or collision shape.
+	# Sample for the supported zoom ceiling once; Line2D's screen-width buckets
+	# still adapt during zoom, while endpoint/property edits invalidate geometry.
+	var max_render_scale := maxf(1.0, stage.camera.max_zoom if stage != null else 3.0)
+	var render_segments := clampi(ceili(curve_segments * sqrt(max_render_scale)), curve_segments, 512)
 	var key := [source_rect, target_rect, global_transform, collision_shape.transform,
 		(arrow_head.get_parent() as Node2D).global_transform, render_segments]
 	if key != _geometry_key:
