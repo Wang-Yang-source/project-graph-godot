@@ -409,6 +409,12 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 	container_panel.add_theme_stylebox_override("panel", Corners.style(style, Corners.fitted_radius(container_panel.size, Corners.PANEL), true, true))
 	if _container_active:
 		style.bg_color = Color.TRANSPARENT
+		# The heading shares the panel origin. Keep its backing inside the
+		# existing border instead of painting over the top edge and corners.
+		var heading_inset := float(style.border_width_top)
+		style.expand_margin_left = -heading_inset
+		style.expand_margin_top = -heading_inset
+		style.expand_margin_right = -heading_inset
 		style.set_border_width_all(0)
 	label.add_theme_stylebox_override("normal", Corners.style(style, Corners.fitted_radius(label.size, Corners.PANEL), true, true))
 	text_edit.add_theme_color_override("font_color", foreground)
