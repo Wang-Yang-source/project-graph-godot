@@ -95,6 +95,10 @@ func _ready() -> void:
 	text_edit.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	text_edit.grow_horizontal = Control.GROW_DIRECTION_END
 	text_edit.grow_vertical = Control.GROW_DIRECTION_END
+	# 标题尺寸变化时固定左上角，居中交给 Label 的文本对齐。
+	label.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	label.grow_horizontal = Control.GROW_DIRECTION_END
+	label.grow_vertical = Control.GROW_DIRECTION_END
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_normal_label_position = label.position
@@ -424,6 +428,12 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 		_align_edit_text()
 	if update_layout:
 		label.reset_size()
+		# 样式、文字和字体刷新不能把分组标题缩回普通文本块宽度。
+		# 保持与创建、加载和拖动时相同的顶部居中布局。
+		if _container_active and _container_rect.has_area():
+			label.position = _container_rect.position
+			label.size = Vector2(_container_rect.size.x, label.get_minimum_size().y)
+			text_edit.position = label.position
 		_queue_collision_update()
 	_refresh_corner_styles()
 
