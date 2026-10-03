@@ -225,7 +225,8 @@ func _process(_delta: float) -> void:
 			collision_points.append(tip)
 		# Camera zoom changes only screen geometry, never world collisions.
 		_update_collision_shape(collision_shape.global_transform.affine_inverse() * collision_points)
-	if stage != null:
+	# The shader mesh is only displayed during animated zoom. Build it on demand.
+	if stage != null and shader_active:
 		if _zoom_mesh == null:
 			_zoom_mesh = preload("res://src/stage_object/association/line_edge/zoom_mesh.gd").new()
 			_zoom_mesh.name = "ZoomStroke"
