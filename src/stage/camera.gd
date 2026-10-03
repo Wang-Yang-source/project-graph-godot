@@ -22,6 +22,9 @@ extends Camera2D
 ## 缩放平滑阻尼系数
 @export var zoom_friction: float = 12.0
 
+signal zoom_animation_finished
+var _zoom_animation_active := false
+
 const REFERENCE_ZOOM := 2.0
 const MIN_GESTURE_ZOOM_FACTOR := 0.01
 const LINUX_SCROLL_PAN_SCALE := 8.0
@@ -123,6 +126,7 @@ func _process(delta: float) -> void:
 	_sync_texture_sampling()
 	if _text_input_active():
 		velocity = Vector2.ZERO
+		_set_zoom_animation_active(false)
 		return
 
 	# 带 Ctrl/Shift/Alt/Meta 的快捷键不应同时触发 WASD/方向键的原始相机移动。
@@ -157,6 +161,7 @@ func _process(delta: float) -> void:
 	# 3. 平滑追赶目标位置与缩放
 	global_position = global_position.lerp(target_position, move_friction * delta)
 	zoom = zoom.lerp(target_zoom, zoom_friction * delta)
+	_set_zoom_animation_active(not zoom.is_equal_approx(target_zoom))
 
 	# 4. 同步传递给 Shader
 	if grid_material:
@@ -165,6 +170,13 @@ func _process(delta: float) -> void:
 		grid_material.set_shader_parameter("render_scale", render_scale)
 		grid_material.set_shader_parameter("camera_offset", global_position)
 		grid_material.set_shader_parameter("camera_zoom", zoom)
+
+
+func _set_zoom_animation_active(active: bool) -> void:
+	var finished := _zoom_animation_active and not active
+	_zoom_animation_active = active
+	if finished:
+		zoom_animation_finished.emit()
 
 
 ## 统一应用平移，并保持与鼠标拖拽一致的“画布跟手”方向

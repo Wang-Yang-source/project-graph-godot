@@ -9,6 +9,7 @@ static var _stroke_textures: Dictionary = {}
 @onready var collision_shape: CollisionShape2D = %CollisionShape
 @onready var line: Line2D = %Line
 @onready var arrow_head: Polygon2D = %Head
+@onready var _base_line_material: Material = %Line.material
 
 
 @export var text := "":
@@ -99,6 +100,8 @@ var _color_key: Array = []
 var _display_color := Color.TRANSPARENT
 var _geometry_key: Array = []
 var _render_key: Array = []
+var _line_geometry_key: Array = []
+static var _screen_stroke_materials: Dictionary = {}
 var _shaft_points := PackedVector2Array()
 var _caption_curve := Curve2D.new()
 var _head_length := 0.0
@@ -111,6 +114,7 @@ func _ready() -> void:
 	process_priority = 2
 	if get_parent() is Stage:
 		get_parent().view_changed.connect(_on_view_changed)
+		get_parent().camera.zoom_animation_finished.connect(_on_zoom_animation_finished)
 	_invalidate_caption_peers()
 	# Container fills use depths 0..64; keep strokes above those backgrounds.
 	z_index = 65
@@ -142,8 +146,9 @@ func _process(_delta: float) -> void:
 	_render_bucket = floori(log(actual_scale) / log(2.0) * 16.0 + _bucket_offset)
 	var sampled_scale := pow(2.0, (_render_bucket - _bucket_offset) / 16.0)
 	var zoom_key := sampled_scale if visibility_layer != 0 else 0.0
+	var shader_active: bool = stage != null and stage.camera._zoom_animation_active
 	var refresh_key := [source.get_instance_id(), target.get_instance_id(), source.geometry_version,
-		target.geometry_version, global_transform, zoom_key, visibility_layer,
+		target.geometry_version, global_transform, zoom_key, visibility_layer, shader_active,
 		stage.layout_revision if stage != null else 0, _appearance_light,
 		show_arrow, curve_segments, stroke_width, stroke_color, use_theme_color]
 	if refresh_key == _refresh_key:
@@ -154,11 +159,23 @@ func _process(_delta: float) -> void:
 	# World anchors/collision stay unchanged through to_local()/to_global().
 	var pixel_scale := sampled_scale
 	var render_scale := Vector2.ONE / pixel_scale
-	if line.scale != render_scale:
-		line.scale = render_scale
+	# Stable mesh during smooth zoom; native textured strokes at rest/pan.
+	var shaft_scale := Vector2.ONE if shader_active else render_scale
+	if line.scale != shaft_scale:
+		line.scale = shaft_scale
 	var render_width := ceilf((maxf(1.0, _unscaled_line_width * pixel_scale) + 1.0) * 4.0) / 4.0
-	if line.width != render_width or line.texture == null:
-		line.width = render_width
+	var world_width := render_width
+	var material: Material = _base_line_material
+	if shader_active:
+		var minimum_scale := maxf(stage.camera.min_zoom, .001)
+		var mesh_scale := maxf(minimum_scale, pow(2.0, floorf(log(sampled_scale) / log(2.0))))
+		world_width = maxf(_unscaled_line_width, 1.0 / mesh_scale) + 1.0 / mesh_scale
+		var display_scale := maxf(get_viewport().get_final_transform().get_scale().x, 1.0)
+		material = _screen_stroke_material(_unscaled_line_width, world_width, display_scale)
+	if line.material != material:
+		line.material = material
+	if line.width != world_width or line.texture == null:
+		line.width = world_width
 		line.texture = _stroke_texture(render_width)
 	if arrow_head.scale != render_scale:
 		arrow_head.scale = render_scale
@@ -185,6 +202,7 @@ func _process(_delta: float) -> void:
 	if key != _geometry_key:
 		_geometry_key = key
 		_render_key.clear()
+		_line_geometry_key.clear()
 		var anchors := connection_uvs(source_rect, target_rect)
 		var span := anchor(target_rect, anchors[1]) - anchor(source_rect, anchors[0])
 		var center_direction := (target_rect.get_center() - source_rect.get_center()).normalized()
@@ -209,7 +227,10 @@ func _process(_delta: float) -> void:
 		set_process(false)
 		return
 	_render_key = render_key
-	line.points = line.global_transform.affine_inverse() * _shaft_points
+	var line_geometry_key := [line.global_transform]
+	if line_geometry_key != _line_geometry_key:
+		_line_geometry_key = line_geometry_key
+		line.points = line.global_transform.affine_inverse() * _shaft_points
 	if arrow_head.visible:
 		arrow_head.polygon = PackedVector2Array([
 			Vector2.ZERO,
@@ -218,6 +239,21 @@ func _process(_delta: float) -> void:
 		])
 
 	set_process(false)
+
+
+# Shared materials keep the mesh stable while the shader computes screen coverage.
+static func _screen_stroke_material(stroke: float, mesh_width: float, display_scale: float) -> ShaderMaterial:
+	var key := Vector3(stroke, mesh_width, display_scale)
+	if _screen_stroke_materials.has(key):
+		return _screen_stroke_materials[key]
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://src/stage_object/association/line_edge/screen_stroke.gdshader")
+	material.set_shader_parameter("stroke_ratio", stroke / mesh_width)
+	material.set_shader_parameter("pixel_scale", display_scale)
+	if _screen_stroke_materials.size() >= 128:
+		_screen_stroke_materials.clear()
+	_screen_stroke_materials[key] = material
+	return material
 
 
 # A one-screen-pixel alpha ramp survives GLES rendering and zoom. Cache
@@ -521,6 +557,20 @@ func _watch_endpoints() -> void:
 func _queue_refresh() -> void:
 	_refresh_key.clear()
 	set_process(true)
+
+
+func _on_zoom_animation_finished() -> void:
+	if line.material == _base_line_material or visibility_layer == 0:
+		return
+	# Spread native mesh restoration across the existing sixteen sampling phases.
+	get_tree().create_timer(_bucket_offset * .064, false).timeout.connect(_finish_zoom_stroke)
+
+
+func _finish_zoom_stroke() -> void:
+	var stage := get_parent() as Stage
+	if stage != null and not stage.camera._zoom_animation_active:
+		_refresh_key.clear()
+		set_process(true)
 
 
 func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
