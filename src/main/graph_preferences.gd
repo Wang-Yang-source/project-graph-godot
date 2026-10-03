@@ -21,6 +21,14 @@ static func ensure_loaded() -> void:
 				_config.set_value("settings", "theme", "system")
 			_config.set_value("settings", "theme_mode_migrated", true)
 			_config.save(PATH)
+		# 旧配置可能持久化了原默认 100%，仅修改 DEFAULTS 不会放大已有界面。
+		# 迁移只执行一次，之后用户重新选择 100% 也不会被覆盖。
+		if not _config.has_section_key("settings", "ui_scale_200_migrated"):
+			var previous_scale := float(_config.get_value("settings", "ui_scale", DEFAULTS["ui_scale"]))
+			if is_equal_approx(previous_scale, 100.0):
+				_config.set_value("settings", "ui_scale", DEFAULTS["ui_scale"])
+			_config.set_value("settings", "ui_scale_200_migrated", true)
+			_config.save(PATH)
 		_loaded = true
 
 
