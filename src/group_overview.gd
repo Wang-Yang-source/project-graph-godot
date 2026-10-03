@@ -7,6 +7,7 @@ extends Node2D
 
 const Corners = preload("res://src/main/continuous_corners.gd")
 const Palette = preload("res://src/main/theme_palette.gd")
+const PreviewCapture = preload("res://src/stage/preview_texture_capture.gd")
 const TITLE_FONT_SIZE := 100
 # Physical screen pixels: switch hierarchy before ordinary text becomes unreadable.
 const DETAIL_TITLE_PIXELS := 12.0
@@ -461,9 +462,7 @@ func _update_native_previews() -> void:
 		if roots.has(identifier):
 			continue
 		var cached: Dictionary = _native_previews[identifier]
-		if is_instance_valid(cached.view):
-			cached.view.queue_free()
-		cached.image.queue_free()
+		_release_native_preview(cached)
 		_native_previews.erase(identifier)
 	for identifier in roots:
 		var rect: Rect2 = _group_rects[identifier]
@@ -476,9 +475,7 @@ func _update_native_previews() -> void:
 			var cached: Dictionary = _native_previews[identifier]
 			if cached.get("content_key", []) == content_key:
 				continue
-			if is_instance_valid(cached.view):
-				cached.view.queue_free()
-			cached.image.queue_free()
+			_release_native_preview(cached)
 		var factor := float(_native_resolutions[identifier]) / maxf(rect.size.x, rect.size.y)
 		var view := SubViewport.new()
 		view.name = "NativeGroupCache"
@@ -542,18 +539,37 @@ func _update_native_previews() -> void:
 		data.image.visible = stage.world_view_rect.intersects(data.rect, true)
 
 
+func _release_native_preview(data: Dictionary) -> void:
+	data["cancelled"] = true
+	if is_instance_valid(data.view) and not data.get("capture_pending", false):
+		data.view.queue_free()
+	if is_instance_valid(data.image):
+		data.image.queue_free()
+
+
 func _freeze_preview_texture(data: Dictionary) -> void:
 	await RenderingServer.frame_post_draw
 	if not is_instance_valid(data.view) or not is_instance_valid(data.image):
 		return
-	var pixels: Image = data.view.get_texture().get_image()
-	pixels.generate_mipmaps()
-	data.image.texture = ImageTexture.create_from_image(pixels)
-	var alpha_material := CanvasItemMaterial.new()
-	alpha_material.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
-	data.image.material = alpha_material
-	data.image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	data.view.queue_free()
+	if data.view.is_queued_for_deletion() or data.image.is_queued_for_deletion():
+		return
+	data["capture_pending"] = true
+	PreviewCapture.capture(data.view, _complete_preview_capture.bind(data))
+
+
+func _complete_preview_capture(pixels: Image, data: Dictionary) -> void:
+	data["capture_pending"] = false
+	if (pixels == null or pixels.is_empty()) and not data.get("cancelled", false) and is_instance_valid(data.image) and not data.image.is_queued_for_deletion():
+		# Preserve the already-rendered viewport if a readback fails.
+		return
+	if not data.get("cancelled", false) and is_instance_valid(data.image) and not data.image.is_queued_for_deletion() and pixels != null and not pixels.is_empty():
+		data.image.texture = ImageTexture.create_from_image(pixels)
+		var alpha_material := CanvasItemMaterial.new()
+		alpha_material.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+		data.image.material = alpha_material
+		data.image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	if is_instance_valid(data.view):
+		data.view.queue_free()
 
 
 func _preview_display_rect(identifier: int) -> Rect2:
