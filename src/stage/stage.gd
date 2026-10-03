@@ -550,7 +550,7 @@ func edge_at(world_point: Vector2) -> LineEdge:
 	return nearest
 
 
-func connect_entities(from: Entity, to: Entity) -> LineEdge:
+func connect_entities(from: Entity, to: Entity, animate_creation := false) -> LineEdge:
 	if not is_instance_valid(from) or not is_instance_valid(to) or from == to:
 		return null
 	for object in stage_objects():
@@ -561,6 +561,8 @@ func connect_entities(from: Entity, to: Entity) -> LineEdge:
 	edge.source = from
 	edge.target = to
 	add_child(edge)
+	if animate_creation:
+		edge.play_creation_animation()
 	return edge
 
 

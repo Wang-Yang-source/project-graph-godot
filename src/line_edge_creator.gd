@@ -101,7 +101,7 @@ func _finish_drag() -> void:
 		var history := _get_history()
 		if history != null:
 			history.begin_transaction()
-		var edge: LineEdge = target_root.connect_entities(_source, _target)
+		var edge: LineEdge = target_root.connect_entities(_source, _target, true)
 		if edge != null:
 			target_root.select_ids(PackedStringArray([edge.id]))
 			target_root.document_changed.emit()

@@ -102,6 +102,8 @@ var _render_key: Array = []
 var _shaft_points := PackedVector2Array()
 var _caption_curve := Curve2D.new()
 var _head_length := 0.0
+var _creation_progress := 1.0
+var _creation_tween: Tween
 @onready var _unscaled_line_width: float = %Line.width
 
 
@@ -205,7 +207,7 @@ func _process(_delta: float) -> void:
 		set_process(false)
 		return
 	_render_key = render_key
-	line.points = line.global_transform.affine_inverse() * _shaft_points
+	_apply_creation_progress()
 	if arrow_head.visible:
 		arrow_head.polygon = PackedVector2Array([
 			Vector2.ZERO,
@@ -214,6 +216,54 @@ func _process(_delta: float) -> void:
 		])
 
 	set_process(false)
+
+
+func play_creation_animation() -> void:
+	if _creation_tween != null:
+		_creation_tween.kill()
+	refresh_for_physics()
+	_set_creation_progress(0.0)
+	_creation_tween = create_tween()
+	_creation_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_creation_tween.tween_method(_set_creation_progress, 0.0, 1.0, 0.32)
+	_creation_tween.finished.connect(_finish_creation_animation)
+
+
+func _finish_creation_animation() -> void:
+	_creation_tween = null
+	_set_creation_progress(1.0)
+
+
+func _set_creation_progress(value: float) -> void:
+	_creation_progress = clampf(value, 0.0, 1.0)
+	_apply_creation_progress()
+
+
+func _apply_creation_progress() -> void:
+	if _creation_progress >= 1.0:
+		line.points = line.global_transform.affine_inverse() * _shaft_points
+	else:
+		# Reveal by world arc length, so both straight and curved spans flow
+		# uniformly. Full collision and caption geometry remain unchanged.
+		var length := 0.0
+		for index in range(1, _shaft_points.size()):
+			length += _shaft_points[index - 1].distance_to(_shaft_points[index])
+		var remaining := length * _creation_progress
+		var visible_points := PackedVector2Array()
+		if not _shaft_points.is_empty():
+			visible_points.append(_shaft_points[0])
+		for index in range(1, _shaft_points.size()):
+			var start := _shaft_points[index - 1]
+			var end := _shaft_points[index]
+			var segment_length := start.distance_to(end)
+			if remaining < segment_length:
+				visible_points.append(start.lerp(end, remaining / maxf(segment_length, 0.001)))
+				break
+			visible_points.append(end)
+			remaining -= segment_length
+		line.points = line.global_transform.affine_inverse() * visible_points
+	arrow_head.modulate.a = smoothstep(0.82, 1.0, _creation_progress)
+	$Caption.modulate.a = smoothstep(0.5, 0.9, _creation_progress)
 
 
 # A one-screen-pixel alpha ramp survives GLES rendering and zoom. Cache
@@ -462,6 +512,9 @@ func _invalidate_caption_peers() -> void:
 
 
 func _exit_tree() -> void:
+	if _creation_tween != null:
+		_creation_tween.kill()
+		_creation_tween = null
 	for entity in _watched_entities:
 		if is_instance_valid(entity) and entity.geometry_changed.is_connected(_queue_refresh):
 			entity.geometry_changed.disconnect(_queue_refresh)
