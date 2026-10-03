@@ -77,6 +77,7 @@ var _editing := false
 var _edit_minimum_size := Vector2.ZERO
 var _edit_origin := Vector2.ZERO
 var _appearance_light: Variant = null
+var _appearance_container := false
 var _displayed_background := Color(-1, -1, -1, -1)
 var _collision_update_pending := false
 
@@ -372,9 +373,10 @@ func display_background_color(light: bool) -> Color:
 func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) -> void:
 	var light: bool = _display_theme_is_light() if theme_light == null else bool(theme_light)
 	var background := display_background_color(light)
-	if not update_layout and _appearance_light == light and _displayed_background.is_equal_approx(background):
+	if not update_layout and _appearance_light == light and _appearance_container == _container_active and _displayed_background.is_equal_approx(background):
 		return
 	_appearance_light = light
+	_appearance_container = _container_active
 	invalidate_geometry()
 	_displayed_background = background
 	if _edit_menu != null:
