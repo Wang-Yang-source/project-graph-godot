@@ -26,6 +26,10 @@ var _target_uv := Vector2(0.5, 0.5)
 var _preview_line: Line2D
 var _source_edge_highlight: Line2D
 var _target_edge_highlight: Line2D
+var _preview_tween: Tween
+var _preview_progress := 0.0
+var _preview_points := PackedVector2Array()
+var _preview_curve := Curve2D.new()
 
 
 func _ready() -> void:
@@ -82,6 +86,7 @@ func _input(event: InputEvent) -> void:
 
 
 func _start_drag(source: Entity, mouse_position: Vector2) -> void:
+	_stop_preview_animation()
 	_drag_start_position = mouse_position
 	_drag_threshold_passed = false
 	# 连线预览不改文档；仅实际创建连线时开始历史事务。
@@ -92,6 +97,7 @@ func _start_drag(source: Entity, mouse_position: Vector2) -> void:
 
 
 func _finish_drag() -> void:
+	_stop_preview_animation()
 	# 无论是否命中 target，拖拽结束后都关闭临时反馈。
 	_preview_line.visible = false
 	_source_edge_highlight.visible = false
@@ -101,7 +107,7 @@ func _finish_drag() -> void:
 		var history := _get_history()
 		if history != null:
 			history.begin_transaction()
-		var edge: LineEdge = target_root.connect_entities(_source, _target, true)
+		var edge: LineEdge = target_root.connect_entities(_source, _target)
 		if edge != null:
 			target_root.select_ids(PackedStringArray([edge.id]))
 			target_root.document_changed.emit()
@@ -116,6 +122,7 @@ func _finish_drag() -> void:
 
 
 func _update_preview(mouse_position: Vector2) -> void:
+	var begin_animation := not _drag_threshold_passed
 	if not _drag_threshold_passed:
 		var screen_delta := get_global_transform_with_canvas().basis_xform(mouse_position - _drag_start_position)
 		_drag_threshold_passed = screen_delta.length_squared() > 25.0
@@ -127,21 +134,71 @@ func _update_preview(mouse_position: Vector2) -> void:
 			return
 	_preview_line.show()
 	_update_drag_state(mouse_position)
-	# 预览与正式连线共用选边和曲线，松开鼠标后不会跳回另一条边。
+	# The provisional tip follows the cursor; target ports remain separate feedback.
 	var origin := LineEdge.connection_rect(_source, _target)
-	var destination := LineEdge.connection_rect(_target, _source) if _target != null else Rect2(mouse_position, Vector2.ZERO)
+	var destination := Rect2(mouse_position, Vector2.ZERO)
 	var anchors := LineEdge.connection_uvs(origin, destination)
 	_source_uv = anchors[0]
 	_target_uv = anchors[1]
 	_update_edge_highlight(_source_edge_highlight, origin, _source_uv, anchors[2])
 	if _target != null:
-		_update_edge_highlight(_target_edge_highlight, destination, _target_uv, anchors[3])
+		var target_rect := LineEdge.connection_rect(_target, _source)
+		var target_anchors := LineEdge.connection_uvs(origin, target_rect)
+		_update_edge_highlight(_target_edge_highlight, target_rect, target_anchors[1], target_anchors[3])
 	else:
 		_target_edge_highlight.visible = false
 	var points := LineEdge.connection_curve(origin, destination, anchors, preview_curve_segments)
 	for index in points.size():
 		points[index] = to_local(points[index])
-	_preview_line.points = points
+	_preview_points = points
+	_preview_curve.clear_points()
+	for point in points:
+		_preview_curve.add_point(point)
+	_draw_preview()
+	if begin_animation:
+		_preview_tween = create_tween()
+		_preview_tween.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		_preview_tween.tween_method(_set_preview_progress, 0.0, 1.0, 0.2)
+		_preview_tween.finished.connect(_finish_preview_animation)
+
+
+func _set_preview_progress(value: float) -> void:
+	_preview_progress = value
+	_draw_preview()
+
+
+func _draw_preview() -> void:
+	if _preview_progress >= 1.0:
+		_preview_line.points = _preview_points
+		return
+	var baked := _preview_curve.get_baked_points()
+	if baked.size() < 2:
+		_preview_line.clear_points()
+		return
+	var count := floori((baked.size() - 1) * _preview_progress)
+	var visible_points := baked.slice(0, count + 1)
+	visible_points.append(_preview_curve.sample_baked(_preview_curve.get_baked_length() * _preview_progress))
+	_preview_line.points = visible_points
+
+
+func _finish_preview_animation() -> void:
+	_preview_tween = null
+	_set_preview_progress(1.0)
+
+
+func _stop_preview_animation() -> void:
+	if _preview_tween != null:
+		_preview_tween.kill()
+		_preview_tween = null
+	_preview_progress = 0.0
+	_preview_points.clear()
+	_preview_curve.clear_points()
+	if is_instance_valid(_preview_line):
+		_preview_line.clear_points()
+
+
+func _exit_tree() -> void:
+	_stop_preview_animation()
 
 
 func _update_drag_state(mouse_position: Vector2) -> void:
@@ -233,6 +290,7 @@ func _get_history() -> History:
 
 
 func cancel_drag() -> void:
+	_stop_preview_animation()
 	if _source == null:
 		return
 	_source = null
