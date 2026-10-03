@@ -32,6 +32,7 @@ func settle() -> void:
 		await process_frame
 
 func _run() -> void:
+	GraphPreferences.set_value("welcome", false, false)
 	app = load("res://src/main/main.tscn").instantiate()
 	root.add_child(app)
 	await settle()

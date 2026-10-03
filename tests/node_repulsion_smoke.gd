@@ -82,12 +82,12 @@ func _run() -> void:
 	a = make_body(Vector2.ZERO)
 	b = make_body(Vector2(100, 0))
 	solver.acceleration = 0.0
-	a.linear_velocity = Vector2(-240, 0)
-	b.linear_velocity = Vector2(240, 0)
+	a.linear_velocity = Vector2(-solver.maximum_speed, 0)
+	b.linear_velocity = Vector2(solver.maximum_speed, 0)
 	for step in 3:
 		solver._physics_process(1.0 / 60.0)
-	check(a.linear_velocity == Vector2(-240, 0), "Satisfied constraint preserves first velocity")
-	check(b.linear_velocity == Vector2(240, 0), "Satisfied constraint preserves second velocity")
+	check(a.linear_velocity == Vector2(-solver.maximum_speed, 0), "Satisfied constraint preserves first velocity")
+	check(b.linear_velocity == Vector2(solver.maximum_speed, 0), "Satisfied constraint preserves second velocity")
 	cleanup()
 
 	# Different containers must not exchange forces.

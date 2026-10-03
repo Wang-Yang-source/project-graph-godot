@@ -2,10 +2,10 @@ extends Node2D
 
 ## 用世界坐标边界计算磁性斥力，不启用刚体硬碰撞。
 @export var target_root: Node
-@export_range(1.0, 128.0) var influence_distance := 64.0
-@export_range(1.0, 2000.0) var acceleration := 1200.0
-@export_range(1.0, 600.0) var maximum_speed := 240.0
-@export_range(1.0, 48.0) var minimum_gap := 12.0
+@export_range(1.0, 128.0) var influence_distance := 16.0
+@export_range(1.0, 2000.0) var acceleration := 120.0
+@export_range(1.0, 600.0) var maximum_speed := 24.0
+@export_range(1.0, 48.0) var minimum_gap := 4.0
 @export_range(0.0, 600.0) var attraction_acceleration := 180.0
 @export_range(0.0, 200.0) var attraction_speed := 80.0
 @export_range(32.0, 600.0) var attraction_distance := 160.0
