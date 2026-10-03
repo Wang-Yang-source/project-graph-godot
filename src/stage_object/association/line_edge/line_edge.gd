@@ -101,6 +101,8 @@ var _display_color := Color.TRANSPARENT
 var _geometry_key: Array = []
 var _render_key: Array = []
 var _line_geometry_key: Array = []
+var _zoom_mesh: MeshInstance2D
+var _zoom_mesh_geometry_key: Array = []
 static var _screen_stroke_materials: Dictionary = {}
 var _shaft_points := PackedVector2Array()
 var _caption_curve := Curve2D.new()
@@ -147,6 +149,9 @@ func _process(_delta: float) -> void:
 	var sampled_scale := pow(2.0, (_render_bucket - _bucket_offset) / 16.0)
 	var zoom_key := sampled_scale if visibility_layer != 0 else 0.0
 	var shader_active: bool = stage != null and stage.camera._zoom_animation_active
+	if _zoom_mesh != null:
+		_zoom_mesh.visible = shader_active
+	line.visible = not shader_active
 	var refresh_key := [source.get_instance_id(), target.get_instance_id(), source.geometry_version,
 		target.geometry_version, global_transform, zoom_key, visibility_layer, shader_active,
 		stage.layout_revision if stage != null else 0, _appearance_light,
@@ -167,11 +172,9 @@ func _process(_delta: float) -> void:
 	var world_width := render_width
 	var material: Material = _base_line_material
 	if shader_active:
-		var minimum_scale := maxf(stage.camera.min_zoom, .001)
-		var mesh_scale := maxf(minimum_scale, pow(2.0, floorf(log(sampled_scale) / log(2.0))))
-		world_width = maxf(_unscaled_line_width, 1.0 / mesh_scale) + 1.0 / mesh_scale
+		world_width = render_width / pixel_scale
 		var display_scale := maxf(get_viewport().get_final_transform().get_scale().x, 1.0)
-		material = _screen_stroke_material(_unscaled_line_width, world_width, display_scale)
+		material = _zoom_mesh.material if _zoom_mesh != null else _screen_stroke_material(_unscaled_line_width, world_width, display_scale)
 	if line.material != material:
 		line.material = material
 	if line.width != world_width or line.texture == null:
@@ -222,6 +225,17 @@ func _process(_delta: float) -> void:
 			collision_points.append(tip)
 		# Camera zoom changes only screen geometry, never world collisions.
 		_update_collision_shape(collision_shape.global_transform.affine_inverse() * collision_points)
+	if stage != null:
+		if _zoom_mesh == null:
+			_zoom_mesh = preload("res://src/stage_object/association/line_edge/zoom_mesh.gd").new()
+			_zoom_mesh.name = "ZoomStroke"
+			add_child(_zoom_mesh)
+		_zoom_mesh.visible = shader_active
+		_zoom_mesh.self_modulate = color
+		var mesh_key := [_geometry_key, _unscaled_line_width, stage.camera.min_zoom, get_viewport().get_final_transform()]
+		if mesh_key != _zoom_mesh_geometry_key:
+			_zoom_mesh_geometry_key = mesh_key.duplicate()
+			_zoom_mesh.update_stroke(global_transform.affine_inverse() * _shaft_points, _unscaled_line_width, stage.camera.min_zoom, maxf(get_viewport().get_final_transform().get_scale().x, 1.0))
 	var render_key := [pixel_scale, line.global_transform]
 	if render_key == _render_key:
 		set_process(false)
@@ -576,6 +590,8 @@ func _finish_zoom_stroke() -> void:
 func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
 	var entered := not _in_view
 	_in_view = world_rect.intersects(_view_bounds, true)
+	if _zoom_mesh != null and not _in_view:
+		_zoom_mesh.hide()
 	if visibility_layer == 0 or not _in_view:
 		return
 	var local_scale := transform.get_scale().x

@@ -35,13 +35,9 @@ func _run() -> void:
 		probe.transparent_bg = true
 		probe.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 		root.add_child(probe)
-		var stroke := Line2D.new()
-		stroke.points = PackedVector2Array([Vector2(20, 30), Vector2(490, 100)])
-		stroke.width = 20.0
-		stroke.texture = edge.line.texture
-		stroke.texture_mode = Line2D.LINE_TEXTURE_STRETCH
-		stroke.material = LineEdge._screen_stroke_material(2.0, 20.0, 1.0)
+		var stroke := preload("res://src/stage_object/association/line_edge/zoom_mesh.gd").new()
 		probe.add_child(stroke)
+		stroke.update_stroke(PackedVector2Array([Vector2(20, 30), Vector2(490, 100)]), 2.0, 1.0, 1.0)
 		for frame in 3:
 			await process_frame
 		await RenderingServer.frame_post_draw
@@ -60,12 +56,18 @@ func _run() -> void:
 	var saved := JSON.stringify(StageObjectRegistry.capture(stage).objects)
 	var collision := (edge.collision_shape.shape as ConcavePolygonShape2D).segments
 	var points := PackedVector2Array()
+	var stroke_mesh: Mesh
 	var observed := false
 	for frame in 40:
 		stage.camera.target_zoom = Vector2.ONE * (.2 + .08 * sin(frame * .15))
 		await process_frame
 		if stage.camera._zoom_animation_active and edge.line.scale == Vector2.ONE:
 			check(edge.line.material is ShaderMaterial, "Smooth zoom uses the stroke shader")
+			check(edge._zoom_mesh.visible and not edge.line.visible, "Smooth zoom draws the cached MeshInstance2D")
+			if stroke_mesh == null:
+				stroke_mesh = edge._zoom_mesh.mesh
+			else:
+				check(stroke_mesh == edge._zoom_mesh.mesh, "Crossing zoom octaves preserves the mesh resource")
 			if points.is_empty():
 				points = edge.line.points
 			else:
@@ -75,6 +77,7 @@ func _run() -> void:
 	stage.camera.target_zoom = stage.camera.zoom
 	await create_timer(.2).timeout
 	check(not stage.camera._zoom_animation_active, "Settled zoom leaves animation mode")
+	check(not edge._zoom_mesh.visible and edge.line.visible, "Settled zoom restores the native shaft node")
 	check(edge.line.material == edge._base_line_material, "Settled zoom restores native textured strokes")
 	check(absf(edge.line.get_global_transform_with_canvas().get_scale().x - 1.0) <= .045, "Restored stroke keeps screen-pixel sampling")
 	check((edge.collision_shape.shape as ConcavePolygonShape2D).segments == collision, "Zoom preserves collision geometry")
