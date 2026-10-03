@@ -44,6 +44,9 @@ var _stroke: PenStroke
 
 
 func _ready() -> void:
+	var text_detail := preload("res://src/stage/text_detail.gd").new()
+	text_detail.name = "TextDetail"
+	add_child(text_detail)
 	process_priority = 1
 	child_entered_tree.connect(_on_stage_child_changed)
 	child_exiting_tree.connect(_on_stage_child_changed)
