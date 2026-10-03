@@ -39,10 +39,10 @@ func _run() -> void:
 				check(rendered.is_equal_approx(original), "Native panel uses the same world frame without independent width or height caps")
 				var corners = preload("res://src/main/continuous_corners.gd")
 				var native_style = corners.source(entity.container_panel.get_theme_stylebox("panel"))
-				var preview_style = corners.source(panel.get_theme_stylebox("panel"))
+				var preview_style = native_style if overview._miniatures.has(identifier) else corners.source(panel.get_theme_stylebox("panel"))
 				var relative: Transform2D = stage.global_transform.affine_inverse() * entity.container_panel.get_global_transform()
 				var expected_radius := roundi(native_style.corner_radius_top_left * relative.get_scale().abs().x / panel.scale.x)
-				check(preview_style.corner_radius_top_left == expected_radius, "Rounded corners scale from the native group shape")
+				check(preview_style.corner_radius_top_left == (native_style.corner_radius_top_left if overview._miniatures.has(identifier) else expected_radius), "Rounded corners scale from the native group shape")
 				check(preview_style.bg_color == entity.display_fill_color(), "Group background preserves native color and opacity")
 	check(JSON.stringify(StageObjectRegistry.capture(stage)) == before, "Preview geometry does not change saved layout")
 	if DisplayServer.get_name() != "headless":

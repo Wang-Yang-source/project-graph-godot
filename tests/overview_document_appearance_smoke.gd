@@ -47,13 +47,15 @@ func _run() -> void:
 				check(rect.is_equal_approx(overview._entity_rects[identifier]), "Colored text uses its own bounds, not branch subtree bounds")
 				var panel: Panel = overview._summaries[identifier]
 				if panel.visible:
-					var style = preload("res://src/main/continuous_corners.gd").source(panel.get_theme_stylebox("panel"))
+					var control: Control = node.label if overview._miniatures.has(identifier) else panel
+					var style = preload("res://src/main/continuous_corners.gd").source(control.get_theme_stylebox("normal" if control == node.label else "panel"))
 					check(style.bg_color == node.fill_color and style.draw_center, "Text background retains original color and opacity")
 			else:
 				var panel: Panel = overview._summaries[identifier]
 				if panel.visible:
-					var style = preload("res://src/main/continuous_corners.gd").source(panel.get_theme_stylebox("panel"))
-					check(not style.draw_center, "Unfilled plain titles have no extra body rectangle")
+					var control: Control = node.label if overview._miniatures.has(identifier) else panel
+					var style = preload("res://src/main/continuous_corners.gd").source(control.get_theme_stylebox("normal" if control == node.label else "panel"))
+					check(style.bg_color.a == 0.0, "Unfilled plain titles have no extra body rectangle")
 		if DisplayServer.get_name() != "headless":
 			await RenderingServer.frame_post_draw
 			root.get_texture().get_image().save_png("/tmp/pg-overview-document-" + str(snappedf(zoom, .0001)) + ".png")

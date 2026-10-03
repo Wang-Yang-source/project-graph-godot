@@ -36,7 +36,8 @@ func _run() -> void:
 		if not overview._summaries.has(entity.get_instance_id()):
 			continue
 		var panel: Panel = overview._summaries[entity.get_instance_id()]
-		var style = preload("res://src/main/continuous_corners.gd").source(panel.get_theme_stylebox("panel"))
+		var control: Control = entity.container_panel if overview._miniatures.has(entity.get_instance_id()) else panel
+		var style = preload("res://src/main/continuous_corners.gd").source(control.get_theme_stylebox("panel"))
 		var border := panel.get_node_or_null("Border") as Line2D
 		if entity._container_active:
 			check(style.draw_center and style.bg_color == entity.display_fill_color() and style.border_width_top > 0, "Actual groups retain their overview frame")

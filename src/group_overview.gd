@@ -48,6 +48,10 @@ var _links_layer: Node2D
 var _panel_pool := {}
 var _overlap_key: Array = []
 var _overlap_hidden: Array[Panel] = []
+# Real frames keep native geometry; overview replaces glyphs only.
+var _miniatures := {}
+var _native_previews := {}
+var _native_preview_key: Array = []
 
 
 func _ready() -> void:
@@ -181,6 +185,7 @@ func refresh() -> void:
 		_link_render_key.clear()
 	for identifier in _summaries:
 		_update_summary(_preview_nodes[identifier], _summaries[identifier])
+	_update_native_previews()
 	_avoid_title_overlaps()
 	_update_preview_links()
 	_view_rect_key = [stage.world_view_rect]
@@ -198,6 +203,7 @@ func _refresh_pan_visibility(stage: Stage) -> void:
 		panel.visible = bool(panel.get_meta("view_readable", false)) and stage.world_view_rect.intersects(rect, true)
 		if panel.visible and panel.get_meta("presentation_pending", true):
 			_update_summary(_preview_nodes[identifier], panel)
+	_update_native_previews()
 	_avoid_title_overlaps()
 	_update_preview_links()
 
@@ -309,6 +315,15 @@ func _refresh_membership() -> void:
 			if _active.has(ancestor):
 				_hidden[identifier] = true
 				break
+	_miniatures.clear()
+	for object in _objects:
+		var identifier: int = object.get_instance_id()
+		for ancestor in _cover_groups.get(identifier, []):
+			if _active.has(ancestor) and _active[ancestor]._container_active:
+				_miniatures[identifier] = true
+				break
+		if object is TextNode and object._container_active and _active.has(identifier):
+			_miniatures[identifier] = true
 	var wanted := _hidden.duplicate()
 	for identifier in _active:
 		wanted[identifier] = true
@@ -381,7 +396,7 @@ func _rebuild_preview_links() -> void:
 		add_child(_links_layer)
 	var wanted := {}
 	for object in _objects:
-		if not object is LineEdge or not _hidden.has(object.get_instance_id()) or not is_instance_valid(object.source) or not is_instance_valid(object.target):
+		if not object is LineEdge or _miniatures.has(object.get_instance_id()) or not _hidden.has(object.get_instance_id()) or not is_instance_valid(object.source) or not is_instance_valid(object.target):
 			continue
 		var from := _representative(object.source.get_instance_id())
 		var to := _representative(object.target.get_instance_id())
@@ -416,6 +431,99 @@ func _rebuild_preview_links() -> void:
 			_preview_links[identifier].node = node
 		else:
 			_preview_links[identifier].edge = wanted[identifier].edge
+
+
+func _update_native_previews() -> void:
+	var stage: Stage = get_parent()
+	var roots := []
+	for identifier in _preview_roots:
+		if _miniatures.has(identifier):
+			roots.append(identifier)
+	var key := [_layout_revision, stage.document_revision, roots]
+	if key != _native_preview_key:
+		_native_preview_key = key
+		for identifier in _native_previews:
+			if is_instance_valid(_native_previews[identifier].view):
+				_native_previews[identifier].view.queue_free()
+			_native_previews[identifier].image.queue_free()
+		_native_previews.clear()
+		for identifier in roots:
+			var rect: Rect2 = _group_rects[identifier]
+			var factor := 512.0 / maxf(rect.size.x, rect.size.y)
+			var view := SubViewport.new()
+			view.name = "NativeGroupCache"
+			view.disable_3d = true
+			view.world_2d = World2D.new()
+			view.transparent_bg = true
+			view.size = Vector2i((rect.size * factor).ceil()).max(Vector2i.ONE)
+			view.render_target_update_mode = SubViewport.UPDATE_ONCE
+			add_child(view)
+			for object in _objects:
+				var object_id: int = object.get_instance_id()
+				if object_id != identifier and not _cover_groups.get(object_id, []).has(identifier):
+					continue
+				if object is TextNode:
+					var control: Control = object.container_panel if object._container_active else object.label
+					var body := Panel.new()
+					body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+					body.set_anchors_preset(Control.PRESET_TOP_LEFT)
+					body.size = control.size
+					var native_style := Corners.source(control.get_theme_stylebox("panel" if object._container_active else "normal"))
+					if native_style != null:
+						var style := native_style.duplicate() as StyleBoxFlat
+						style.set_border_width_all(maxi(style.border_width_top, ceili(2.0 / factor)))
+						body.add_theme_stylebox_override("panel", style)
+					view.add_child(body)
+					body.position = control.global_position
+					body.rotation = control.get_global_transform().get_rotation()
+					body.scale = control.get_global_transform().get_scale()
+					body.z_index = 0 if object._container_active else 2
+				elif object is LineEdge:
+					var line := Line2D.new()
+					var from := LineEdge.connection_rect(object.source, object.target)
+					var to := LineEdge.connection_rect(object.target, object.source)
+					var anchors := LineEdge.connection_uvs(from, to)
+					var head_length := LineEdge.arrow_length(from, to, anchors, object.stroke_width) if object.show_arrow else 0.0
+					line.points = LineEdge.connection_curve(from, to, anchors, object.curve_segments, head_length, true)
+					line.default_color = object.display_stroke_color()
+					line.width = maxf(object.stroke_width, 2.0 / factor)
+					line.antialiased = true
+					line.z_index = 1
+					view.add_child(line)
+					if object.show_arrow:
+						var head := Polygon2D.new()
+						head.position = LineEdge.anchor(to, anchors[1])
+						head.rotation = (-anchors[3]).angle()
+						head.polygon = PackedVector2Array([Vector2.ZERO, Vector2(-head_length, -head_length * .4), Vector2(-head_length, head_length * .4)])
+						head.color = line.default_color
+						head.z_index = 1
+						view.add_child(head)
+			view.canvas_transform = Transform2D(0.0, Vector2.ONE * factor, 0.0, -rect.position * factor)
+			var image := Sprite2D.new()
+			image.texture = view.get_texture()
+			image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR
+			image.position = to_local(rect.get_center())
+			image.scale = rect.size / Vector2(view.size)
+			image.z_index = 66
+			add_child(image)
+			_native_previews[identifier] = {"view":view, "image":image, "rect":rect}
+			_freeze_preview_texture.call_deferred(_native_previews[identifier])
+	for data in _native_previews.values():
+		data.image.visible = stage.world_view_rect.intersects(data.rect, true)
+
+
+func _freeze_preview_texture(data: Dictionary) -> void:
+	await RenderingServer.frame_post_draw
+	if not is_instance_valid(data.view) or not is_instance_valid(data.image):
+		return
+	var pixels: Image = data.view.get_texture().get_image()
+	pixels.generate_mipmaps()
+	data.image.texture = ImageTexture.create_from_image(pixels)
+	var alpha_material := CanvasItemMaterial.new()
+	alpha_material.blend_mode = CanvasItemMaterial.BLEND_MODE_PREMULT_ALPHA
+	data.image.material = alpha_material
+	data.image.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	data.view.queue_free()
 
 
 func _preview_display_rect(identifier: int) -> Rect2:
@@ -588,7 +696,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
 	var text := group.text
 	var content_key := [text, foreground]
-	var key := [revision, pixel_scale, rect, root, covered, content_key, background, border_color, group.font_size]
+	var key := [revision, pixel_scale, rect, root, covered, _miniatures.has(identifier), content_key, background, border_color, group.font_size]
 	if panel.get_meta("summary_key", []) == key:
 		return
 	panel.set_meta("summary_key", key)
@@ -640,7 +748,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var native_transform := stage.global_transform.affine_inverse() * native_control.get_global_transform()
 	var radius := float(native_style.corner_radius_top_left) * native_transform.get_scale().abs().x * pixel_scale if native_style != null else 0.0
 	var framed := group._container_active
-	var style_key := [background, border_color, radius, framed, covered, root]
+	var style_key := [background, border_color, radius, framed, covered, root, _miniatures.has(identifier)]
 	if panel.get_meta("style_key", []) != style_key:
 		var style := StyleBoxFlat.new()
 		style.bg_color = background if framed else fill
@@ -649,6 +757,9 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		style.set_border_width_all(1 if framed and covered else 0)
 		panel.add_theme_stylebox_override("panel", Corners.style(style, radius, true, true))
 		panel.set_meta("style_key", style_key)
+	if _miniatures.has(identifier):
+		# The geometry cache draws this body once; this panel supplies only text.
+		panel.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	var border := panel.get_node_or_null("Border") as Line2D
 	if border == null:
 		border = Line2D.new()
@@ -692,7 +803,12 @@ func _avoid_title_overlaps() -> void:
 		if _preview_roots.has(identifier): continue
 		var panel: Panel = _summaries[identifier]
 		if not panel.visible: continue
-		var rect := panel.get_global_transform() * Rect2(Vector2.ZERO, panel.size)
+		var title: Label = panel.get_node("Title")
+		if not title.visible:
+			continue
+		# Only drawn glyphs compete for space; a frame or invisible Control is
+		# not an occupied title. Keep background geometry and input intact.
+		var rect := title.get_global_transform() * Rect2(Vector2.ZERO, title.size)
 		var overlaps := false
 		for used in occupied:
 			if rect.intersects(used):
