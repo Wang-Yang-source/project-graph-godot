@@ -24,6 +24,10 @@ func check_color(node: TextNode, light: bool, context: String) -> void:
 		check(latex.self_modulate.is_equal_approx(expected), context + ": LaTeX uses same neutral tint")
 	check(is_equal_approx(displayed.r, displayed.g) and is_equal_approx(displayed.g, displayed.b), context + ": only neutral gray is rendered")
 	check(is_equal_approx(displayed.a, 1.0), context + ": saved transparency does not fade text")
+	var ink := displayed.srgb_to_linear().get_luminance()
+	var backdrop := node.display_background_color(light).srgb_to_linear().get_luminance()
+	var contrast := (maxf(ink, backdrop) + 0.05) / (minf(ink, backdrop) + 0.05)
+	check(contrast >= 4.5, context + ": visible text has readable contrast")
 
 func _run() -> void:
 	GraphPreferences._loaded = true
@@ -36,7 +40,7 @@ func _run() -> void:
 	view.add_child(stage)
 	await settle()
 	var nodes: Array[TextNode] = []
-	var fills := [Color.TRANSPARENT, Color.WHITE, Color.BLACK, Color("#777777"), Color("#cba6f7"), Color(1, 0, 0, 0.4)]
+	var fills := [Color.TRANSPARENT, Color.WHITE, Color.BLACK, Color("#777777"), Color("#cdd6f4"), Color("#cba6f7"), Color(1, 0, 0, 0.4)]
 	for index in fills.size():
 		var node := stage.create_text_node("Readable text " + str(index), Vector2((index % 3) * 280 - 300, int(index / 3.0) * 140 - 100), false)
 		node.fill_color = fills[index]
