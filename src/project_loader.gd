@@ -6,6 +6,7 @@ const Reveal = preload("res://src/load_branch_reveal.gdshader")
 const FRAME_BUDGET_USEC := 12000
 const MAX_BATCH := 96
 const REVEAL_SECONDS := 0.18
+const ANIMATED_OBJECT_LIMIT := 256
 
 class ParseJob extends RefCounted:
 	var result := {"ok": false, "error": "无法准备项目，项目数据无效"}
@@ -171,6 +172,8 @@ func _build_batch(stage: Node) -> void:
 			break
 	stage.group_overview.refresh()
 	for entry in revealed:
+		if _ordered.size() > ANIMATED_OBJECT_LIMIT:
+			continue
 		var object: StageObject = entry.object
 		var panel: Variant = stage.group_overview._summaries.get(object.get_instance_id())
 		if panel != null or not stage.group_overview.is_hidden(object):
@@ -199,11 +202,9 @@ func _build_batch(stage: Node) -> void:
 
 func _capture_batch(stage: Node) -> void:
 	var deadline := Time.get_ticks_usec() + FRAME_BUDGET_USEC
-	var count := 0
-	while _cursor < _objects.size() and count < 64:
+	while _cursor < _objects.size():
 		var object := _objects[_cursor]
 		_cursor += 1
-		count += 1
 		_snapshot.objects.append(StageObjectRegistry._serialize_object(object))
 		_comparison[object.id] = StageObjectRegistry.object_comparison_state(object)
 		if Time.get_ticks_usec() >= deadline:
