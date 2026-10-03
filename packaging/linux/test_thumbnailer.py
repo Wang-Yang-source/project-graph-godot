@@ -117,13 +117,17 @@ class ThumbnailTests(unittest.TestCase):
                     )
                 )
 
-    def test_saved_text_color_is_preserved(self):
-        node = self.node("leaf", "你好")
-        node["properties"]["text_color"]["args"] = [1, 0, 0, 1]
-        pixels = self.pixels(self.render_graph([node]))
-        self.assertGreater(
-            sum(r > 200 and g < 50 and b < 50 for r, g, b in pixels), 100
-        )
+    def test_saved_text_color_uses_neutral_background_contrast(self):
+        for light in (False, True):
+            for fill in ((0, 0, 0, 0), (1, 1, 1, 1), (0, 0, 0, 1)):
+                with self.subTest(light=light, fill=fill):
+                    node = self.node("leaf", "你好", fill=fill)
+                    node["properties"]["text_color"]["args"] = [1, 0, 0, 0.2]
+                    automatic = self.node("leaf", "你好", fill=fill)
+                    self.assertEqual(
+                        self.render_graph([node], light=light),
+                        self.render_graph([automatic], light=light),
+                    )
 
     def test_node_text_does_not_wrap_at_preview_width(self):
         node = self.node("leaf", "Project Graph " * 8)

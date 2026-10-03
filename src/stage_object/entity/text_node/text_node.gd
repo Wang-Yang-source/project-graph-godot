@@ -67,7 +67,8 @@ var _edit_menu: PopupMenu
 		if is_node_ready():
 			_apply_appearance()
 
-@export var text_color := Color.TRANSPARENT:
+## 旧文件字段仅用于兼容保存；显示颜色始终由实际背景计算。
+@export_storage var text_color := Color.TRANSPARENT:
 	set(value):
 		text_color = value
 		notify_persistent_change()
@@ -387,9 +388,7 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 		_configure_edit_menu(light)
 	label.begin_bulk_theme_override()
 	text_edit.begin_bulk_theme_override()
-	var foreground := text_color
-	if foreground.a == 0.0:
-		foreground = Palette.neutral_text_color(background)
+	var foreground := Palette.neutral_text_color(background)
 	label.add_theme_color_override("font_color", Color(0, 0, 0, 0) if _editing else foreground)
 	if update_layout:
 		label.add_theme_font_size_override("font_size", font_size)

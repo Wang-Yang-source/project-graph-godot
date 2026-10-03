@@ -566,11 +566,8 @@ def render(source, output, requested_size):
         ctx.set_source_rgb(*neutral_color(backgrounds[key]))
         ctx.set_line_width(max(1, 1 / scale))
         ctx.stroke()
-        foreground = native_color(node_props[key].get("text_color"))
-        if foreground[3] == 0:
-            ctx.set_source_rgb(*neutral_color(backgrounds[key], 7))
-        else:
-            ctx.set_source_rgba(*foreground)
+        # Match canvas text: legacy saved colors never override neutral contrast.
+        ctx.set_source_rgb(*neutral_color(backgrounds[key], 7))
         layout = by_id[key][4]
         # A container header includes the same vertical padding as a node.
         text_height = layout.get_pixel_size()[1]
