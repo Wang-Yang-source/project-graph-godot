@@ -37,6 +37,8 @@ var _preview_links := {}
 var _link_render_key: Array = []
 var _links_layer: Node2D
 var _panel_pool := {}
+var _overlap_key: Array = []
+var _overlap_hidden: Array[Panel] = []
 
 
 func _ready() -> void:
@@ -90,7 +92,7 @@ func refresh() -> void:
 	var camera: Camera2D = stage.camera
 	var viewport_size := get_viewport_rect().size
 	var key := [stage.layout_revision, stage.document_revision, camera.zoom, viewport_size,
-		stage.world_view_rect, camera_scale_threshold, viewport_size_ratio, stage._applied_theme_light]
+		stage.world_view_rect, get_viewport().get_final_transform(), camera_scale_threshold, viewport_size_ratio, stage._applied_theme_light]
 	if key == _refresh_key:
 		return
 	_refresh_key = key
@@ -117,7 +119,7 @@ func refresh() -> void:
 		_refresh_preview_rects()
 	var sizes := []
 	for group in _groups:
-		sizes.append([group.get_instance_id(), _group_rects[group.get_instance_id()].size, group.font_size])
+		sizes.append([group.get_instance_id(), _group_rects[group.get_instance_id()].size, group.font_size, group.text.strip_edges().is_empty()])
 	var gate_key := [sizes, viewport_size, camera_scale_threshold, viewport_size_ratio]
 	if gate_key != _gate_key:
 		_gate_key = gate_key
@@ -143,11 +145,11 @@ func refresh() -> void:
 		_active.clear()
 		for group in _groups:
 			var identifier: int = group.get_instance_id()
-			if not _blocked.has(identifier) and membership_zoom < float(_group_gates[identifier]):
+			if not group.text.strip_edges().is_empty() and not _blocked.has(identifier) and membership_zoom < float(_group_gates[identifier]):
 				_active[identifier] = group
 		for group in _groups:
 			var identifier: int = group.get_instance_id()
-			if not _blocked.has(identifier) and not _active_ancestors(group).is_empty():
+			if not group.text.strip_edges().is_empty() and not _blocked.has(identifier) and not _active_ancestors(group).is_empty():
 				_active[identifier] = group
 		if previous != _active or _preview_nodes.is_empty() or changed:
 			_refresh_membership()
@@ -155,6 +157,7 @@ func refresh() -> void:
 		_link_render_key.clear()
 	for identifier in _summaries:
 		_update_summary(_preview_nodes[identifier], _summaries[identifier])
+	_avoid_title_overlaps()
 	_update_preview_links()
 
 
@@ -285,7 +288,7 @@ func _refresh_membership() -> void:
 			_preview_roots[identifier] = true
 			_preview_nodes[identifier] = _active[identifier]
 			for child in _preview_children.get(identifier, []):
-				if _entities[child] is TextNode:
+				if _entities[child] is TextNode and not _entities[child].text.strip_edges().is_empty():
 					_preview_nodes[child] = _entities[child]
 	for identifier in _summaries.keys():
 		if not _preview_nodes.has(identifier):
@@ -375,14 +378,14 @@ func _preview_display_rect(identifier: int) -> Rect2:
 		return object.aabb
 	if object._container_active:
 		# Match Panel zoom buckets so endpoints follow its exact visible boundary.
-		var scale := maxf(get_global_transform_with_canvas().get_scale().x, .01)
+		var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
 		var offset := float(posmod(object.id.hash(), 16)) / 16.0
 		var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
 		var size := rect.size
 		if not _preview_roots.has(identifier):
 			size = size.min(Vector2(160, 80) / pixel_scale)
 		# A long, thin group still needs enough height for a visible curved end.
-		if maxf(size.x, size.y) * pixel_scale >= 20.0:
+		if _preview_roots.has(identifier) and not is_instance_valid(object.container) and maxf(size.x, size.y) * pixel_scale >= 20.0:
 			size = size.max(Vector2(24, 24) / pixel_scale)
 		return Rect2(rect.get_center() - size * .5, size)
 	return rect
@@ -393,7 +396,7 @@ func _preview_endpoint_rect(identifier: int) -> Rect2:
 
 
 func _update_preview_links() -> void:
-	var scale := maxf(get_global_transform_with_canvas().get_scale().x, .01)
+	var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
 	var bucket := floori(log(scale) / log(2.0) * 16.0)
 	var stage: Stage = get_parent()
 	var key := [_layout_revision, stage.document_revision, bucket, stage.world_view_rect]
@@ -514,7 +517,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var identifier := group.get_instance_id()
 	var root := _preview_roots.has(identifier) or (stage.is_loading and _active.has(identifier))
 	var rect: Rect2 = _preview_display_rect(identifier) if _preview_nodes.has(identifier) else _group_rects.get(identifier, group.aabb)
-	var scale := maxf(get_global_transform_with_canvas().get_scale().x, .01)
+	var scale := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).get_scale().x, .01)
 	var screen_size := rect.size * scale
 	var covered := root or group._container_active
 	# Below legible size, omit tiny frames as well as text to reduce overlap.
@@ -537,7 +540,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
 	var text := group.text.replace("\n", " ")
 	var content_key := [text, foreground]
-	var key := [revision, pixel_scale, root, covered, content_key, background, border_color, group.font_size]
+	var key := [revision, pixel_scale, rect, root, covered, content_key, background, border_color, group.font_size]
 	if panel.get_meta("summary_key", []) == key:
 		return
 	panel.set_meta("summary_key", key)
@@ -565,9 +568,10 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var measured := _summary_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, TITLE_FONT_SIZE)
 	var desired := float(group.font_size) * pixel_scale
 	if covered:
-		var ratio := maxf(measured.x / TITLE_FONT_SIZE, .0001)
-		var height := minf(panel.size.x / ratio, panel.size.y) * .9
-		desired = clampf(height, .1, maxf(panel.size.x, panel.size.y) * .8)
+		# Fit the actual font line height; the em size can undercount CJK ascent.
+		var fit := minf(panel.size.x / maxf(measured.x, 0.0001),
+			panel.size.y / maxf(_summary_font.get_height(TITLE_FONT_SIZE), 0.0001)) * .9
+		desired = maxf(0.1, fit * TITLE_FONT_SIZE)
 	title.visible = not text.strip_edges().is_empty() and (maxf(screen_size.x, screen_size.y) >= 20.0 if covered else desired > 5.0)
 	var factor := desired / TITLE_FONT_SIZE
 	title.size = Vector2(measured.x, _summary_font.get_height(TITLE_FONT_SIZE))
@@ -582,7 +586,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		var style := StyleBoxFlat.new()
 		style.bg_color = background
 		style.border_color = border_color
-		style.set_border_width_all(2 if framed and covered else 0)
+		style.set_border_width_all(1 if framed and covered else 0)
 		panel.add_theme_stylebox_override("panel", Corners.style(style, radius, true, true))
 		panel.set_meta("style_key", style_key)
 	var border := panel.get_node_or_null("Border") as Line2D
@@ -605,6 +609,40 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		border.points = Corners.outline(Rect2(Vector2.ZERO, rect.size), radius / pixel_scale)
 		border.set_meta("geometry_key", border_key)
 
+
+func _avoid_title_overlaps() -> void:
+	var key := []
+	for identifier in _summaries:
+		var panel: Panel = _summaries[identifier]
+		key.append([identifier, panel.visible, panel.get_meta("summary_key", [])])
+	if key == _overlap_key:
+		for panel in _overlap_hidden:
+			if is_instance_valid(panel): panel.hide()
+		return
+	_overlap_key = key
+	_overlap_hidden.clear()
+	var occupied: Array[Rect2] = []
+	for identifier in _preview_roots:
+		var panel := _summaries.get(identifier) as Panel
+		if panel == null or not panel.visible: continue
+		var title: Label = panel.get_node("Title")
+		if title.visible:
+			occupied.append(title.get_global_transform() * Rect2(Vector2.ZERO, title.size))
+	for identifier in _summaries:
+		if _preview_roots.has(identifier): continue
+		var panel: Panel = _summaries[identifier]
+		if not panel.visible: continue
+		var rect := panel.get_global_transform() * Rect2(Vector2.ZERO, panel.size)
+		var overlaps := false
+		for used in occupied:
+			if rect.intersects(used):
+				overlaps = true
+				break
+		if overlaps:
+			panel.hide()
+			_overlap_hidden.append(panel)
+		else:
+			occupied.append(rect)
 
 func _on_summary_input(event: InputEvent, group: TextNode) -> void:
 	if not is_instance_valid(group) or is_hidden(group):
