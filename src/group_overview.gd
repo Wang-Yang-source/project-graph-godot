@@ -546,6 +546,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	panel.size = rect.size * pixel_scale
 	panel.z_index = 66 if root else 68
 	var title: Label = panel.get_node("Title")
+	title.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	title.z_index = 4 if root else 0
 	title.clip_text = false
 	title.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
