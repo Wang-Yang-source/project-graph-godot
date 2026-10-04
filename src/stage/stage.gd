@@ -428,7 +428,7 @@ func apply_object_preferences(object: StageObject, theme_light: Variant = null) 
 	if object is LineEdge:
 		object.apply_theme(Palette.is_light(str(GraphPreferences.value("theme"))) if theme_light == null else bool(theme_light))
 	if object is Entity:
-		object.collision_mask = 0
+		object.collision_mask = 1
 
 
 # -1 表示尚未同步；后台标签页在重新显示前调用 apply_theme。

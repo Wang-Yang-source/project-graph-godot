@@ -7,6 +7,11 @@ extends StageObject
 		if container == value:
 			return
 		container = value
+		if is_inside_tree():
+			_refresh_container_collisions.call_deferred()
+			for child in get_parent().get_children():
+				if child is Entity and child.is_inside_container(self):
+					child._refresh_container_collisions.call_deferred()
 		notify_persistent_change()
 		invalidate_geometry()
 
@@ -20,13 +25,18 @@ extends StageObject
 		notify_persistent_change()
 
 const THROW_SAMPLE_SECONDS := 0.08
+static var _native_material: PhysicsMaterial
+var _collision_ancestors: Array[Entity] = []
 
 var is_dragging: bool = false:
 	set(value):
 		is_dragging = value
 		set_process_input(value)
 		set_physics_process(is_dragging or is_throwing)
-var drag_controlled := false
+var drag_controlled := false:
+	set(value):
+		drag_controlled = value
+		freeze = value
 var drag_offset: Vector2 = Vector2.ZERO
 var is_throwing := false:
 	set(value):
@@ -51,8 +61,39 @@ func _ready() -> void:
 	set_process_input(is_dragging)
 	set_physics_process(is_dragging or is_throwing)
 	_history = _find_history()
-	# 保留 collision_layer 供点击/连线查询，关闭刚体之间的硬碰撞。
-	collision_mask = 0
+	# Native bodies own contacts, friction, damping and inertia; controls still pick.
+	collision_layer = 1
+	collision_mask = 1
+	freeze_mode = FREEZE_MODE_KINEMATIC
+	freeze = false
+	gravity_scale = 0.0
+	lock_rotation = true
+	linear_damp_mode = DAMP_MODE_REPLACE
+	linear_damp = throw_damping
+	continuous_cd = CCD_MODE_CAST_SHAPE
+	if _native_material == null:
+		_native_material = PhysicsMaterial.new()
+		_native_material.friction = 0.7
+		_native_material.bounce = 0.0
+	physics_material_override = _native_material
+	_refresh_container_collisions.call_deferred()
+
+
+func _uses_native_physics() -> bool:
+	return true
+
+
+func _refresh_container_collisions() -> void:
+	# Enclosing panels must not eject their own descendants.
+	for ancestor in _collision_ancestors:
+		if is_instance_valid(ancestor):
+			remove_collision_exception_with(ancestor)
+	_collision_ancestors.clear()
+	var ancestor := container
+	while is_instance_valid(ancestor) and not _collision_ancestors.has(ancestor):
+		add_collision_exception_with(ancestor)
+		_collision_ancestors.append(ancestor)
+		ancestor = ancestor.container
 
 
 func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
@@ -77,9 +118,9 @@ func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> voi
 			_drag_moved = false
 			_last_drag_update = Vector3.INF
 			_drag_origin = global_position
-			drag_offset = get_global_mouse_position() - global_position
+			drag_offset = get_canvas_transform().affine_inverse() * event.position - global_position
 			_drag_samples.clear()
-			_sample_pointer()
+			_sample_pointer(global_position)
 			_drag_origins.clear()
 			if stage != null:
 				for object in stage.call("drag_entities"):
@@ -113,11 +154,11 @@ func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> voi
 				if solver != null:
 					solver.begin_local_edit(_drag_origins.keys().filter(func(object): return not _drag_followers.has(object)))
 		else:
-			finish_drag(true)
+			finish_drag(true, get_canvas_transform().affine_inverse() * event.position)
 		return
 
 	if event is InputEventMouseMotion and is_dragging:
-		_update_drag_target()
+		_update_drag_target(get_canvas_transform().affine_inverse() * event.position)
 		get_viewport().set_input_as_handled()
 
 
@@ -125,22 +166,22 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventWithModifiers and event.alt_pressed:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
-		finish_drag(true)
+		finish_drag(true, get_canvas_transform().affine_inverse() * event.position)
 	elif event is InputEventMouseMotion and is_dragging:
-		_update_drag_target()
+		_update_drag_target(get_canvas_transform().affine_inverse() * event.position)
 		get_viewport().set_input_as_handled()
 
 
-func finish_drag(allow_throw := false) -> void:
+func finish_drag(allow_throw := false, world_pointer := Vector2.INF) -> void:
 	if not is_dragging:
 		return
-	_update_drag_target()
-	var velocity := _pointer_velocity() if _drag_moved and allow_throw and not bool(GraphPreferences.value("snap")) else Vector2.ZERO
+	_update_drag_target(world_pointer)
+	var velocity := _pointer_velocity() if _drag_moved and allow_throw else Vector2.ZERO
 	is_dragging = false
 	for object in _drag_origins:
 		if is_instance_valid(object):
 			object.drag_controlled = false
-			object._release_pending = _drag_moved
+			object._release_pending = false
 			# Descendants follow their parent after release; do not add a second throw.
 			object._release_velocity = Vector2.ZERO if _drag_followers.has(object) else velocity
 			object._start_throw(object._release_velocity)
@@ -161,9 +202,10 @@ func _physics_process(_delta: float) -> void:
 			_update_drag_target()
 
 
-func _update_drag_target() -> void:
-	_sample_pointer()
-	var target_position := get_global_mouse_position() - drag_offset
+func _update_drag_target(world_pointer := Vector2.INF) -> void:
+	var pointer: Vector2 = get_global_mouse_position() if world_pointer == Vector2.INF else world_pointer
+	var target_position := pointer - drag_offset
+	_sample_pointer(target_position)
 	if not _drag_moved:
 		var screen_delta := get_global_transform_with_canvas().basis_xform(target_position - _drag_origin)
 		if screen_delta.length() < 4.0:
@@ -177,25 +219,8 @@ func _update_drag_target() -> void:
 	for object in _drag_origins:
 		if is_instance_valid(object):
 			object._drag_target = _drag_origins[object] + displacement
+			object.global_position = object._drag_target
 			object.sleeping = false
-
-
-func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
-	if _position_sync_pending:
-		var pose := state.transform
-		pose.origin = _position_sync_target
-		state.transform = pose
-		state.linear_velocity = Vector2.ZERO
-		_position_sync_pending = false
-	# 在物理状态中同步位置，抓取点不再通过弹簧速度追赶鼠标。
-	if drag_controlled or _release_pending:
-		var pose := state.transform
-		pose.origin = _drag_target
-		state.transform = pose
-		state.linear_velocity = _release_velocity if _release_pending else Vector2.ZERO
-		state.angular_velocity = 0.0
-		_release_pending = false
-	super(state)
 
 
 # Input events and physics catch-up may report the same target repeatedly.
@@ -208,9 +233,9 @@ func _needs_drag_target_update(target_position: Vector2, axis := -1) -> bool:
 	return true
 
 
-func _sample_pointer() -> void:
+func _sample_pointer(world_position := Vector2.INF) -> void:
 	var now := float(Time.get_ticks_usec()) / 1000000.0
-	_drag_samples.append({"time": now, "position": get_global_mouse_position()})
+	_drag_samples.append({"time": now, "position": get_global_mouse_position() if world_position == Vector2.INF else world_position})
 	while _drag_samples.size() > 2 and float(_drag_samples[1].time) < now - THROW_SAMPLE_SECONDS:
 		_drag_samples.pop_front()
 	while _drag_samples.size() > 64:
@@ -293,5 +318,5 @@ func move_without_inertia(world_position: Vector2) -> void:
 	stop_throw()
 	global_position = world_position
 	_position_sync_target = world_position
-	_position_sync_pending = true
+	_position_sync_pending = false
 	sleeping = false

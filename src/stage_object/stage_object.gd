@@ -15,6 +15,12 @@ var _known_local_transform := Transform2D.IDENTITY
 
 
 func _enter_tree() -> void:
+	# Associations keep editor geometry; entities opt into native simulation.
+	collision_layer = 0
+	collision_mask = 0
+	input_pickable = false
+	freeze = true
+	_detach_physics_body.call_deferred()
 	set_notify_local_transform(true)
 	set_notify_transform(true)
 	_known_transform = global_transform
@@ -22,6 +28,15 @@ func _enter_tree() -> void:
 	if not visibility_changed.is_connected(invalidate_geometry):
 		visibility_changed.connect(invalidate_geometry)
 	invalidate_geometry()
+
+
+func _detach_physics_body() -> void:
+	if is_inside_tree() and not _uses_native_physics():
+		PhysicsServer2D.body_set_space(get_rid(), RID())
+
+
+func _uses_native_physics() -> bool:
+	return false
 
 
 func _notification(what: int) -> void:
