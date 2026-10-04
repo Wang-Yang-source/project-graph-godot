@@ -8,9 +8,15 @@ func _initialize() -> void:
 	call_deferred("_run")
 func _run() -> void:
 	var path := ""
+	var subject_id := ""
+	var benchmark_zoom := .28488218784332
 	for argument in OS.get_cmdline_user_args():
 		if argument.begins_with("--fixture-hex="):
 			path = argument.trim_prefix("--fixture-hex=").hex_decode().get_string_from_utf8()
+		elif argument.begins_with("--subject-id="):
+			subject_id = argument.trim_prefix("--subject-id=")
+		elif argument.begins_with("--zoom="):
+			benchmark_zoom = maxf(argument.trim_prefix("--zoom=").to_float(), .001)
 	if path.is_empty():
 		push_error("Pass --fixture-hex= with a UTF-8 hexadecimal document path")
 		quit(2)
@@ -48,20 +54,20 @@ func _run() -> void:
 		quit(2)
 		return
 	for object in stage.stage_objects():
-		if object is TextNode and object.text.contains("伸缩链"):
+		if object is TextNode and ((not subject_id.is_empty() and object.id == subject_id) or (subject_id.is_empty() and object.text.contains("伸缩链"))):
 			subject = object
 			break
 	if subject == null:
-		push_error("Fixture must contain the stretch-chain tutorial group")
+		push_error("Fixture must contain the requested TextNode ID, or legacy stretch-chain group")
 		quit(2)
 		return
 	stage.camera.position = subject.aabb.get_center()
 	stage.camera.target_position = stage.camera.position
-	stage.camera.zoom = Vector2.ONE * .28488218784332
+	stage.camera.zoom = Vector2.ONE * benchmark_zoom
 	stage.camera.target_zoom = stage.camera.zoom
 	await create_timer(1.0).timeout
 	stage.get_viewport().physics_object_picking = false
-	print("DRAG_ENV ", JSON.stringify({"version":Engine.get_version_info().string,"objects":stage.stage_objects().size(),"zoom":stage.camera.zoom.x,"size":root.size,"renderer":RenderingServer.get_current_rendering_method(),"gpu":RenderingServer.get_video_adapter_name(),"vsync":DisplayServer.window_get_vsync_mode()}))
+	print("DRAG_ENV ", JSON.stringify({"subject_id":subject.id,"version":Engine.get_version_info().string,"objects":stage.stage_objects().size(),"zoom":stage.camera.zoom.x,"size":root.size,"renderer":RenderingServer.get_current_rendering_method(),"gpu":RenderingServer.get_video_adapter_name(),"vsync":DisplayServer.window_get_vsync_mode()}))
 	var origin := subject.aabb.get_center()
 	var original_position := subject.global_position
 	_motion(origin)
@@ -119,10 +125,10 @@ func _run() -> void:
 func _screen(point: Vector2) -> Vector2:
 	var viewport := stage.get_viewport()
 	var container := viewport.get_parent() as Control
-	return container.get_global_transform_with_canvas() * ((stage.get_canvas_transform() * point) * container.size / Vector2(viewport.size))
+	return container.get_global_transform_with_canvas() * viewport.get_final_transform() * stage.get_canvas_transform() * point
 
 func _motion(point: Vector2) -> void:
-	root.warp_mouse(_screen(point))
+	root.warp_mouse(root.get_final_transform().affine_inverse() * _screen(point))
 	var motion := InputEventMouseMotion.new()
 	motion.position = _screen(point)
 	motion.global_position = motion.position
