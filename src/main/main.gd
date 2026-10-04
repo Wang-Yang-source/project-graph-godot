@@ -480,7 +480,7 @@ func _setup_panels() -> void:
 		if dialog is Window:
 			dialog.visibility_changed.connect(_sync_visible_window_theme.bind(dialog))
 		if dialog is AcceptDialog:
-			dialog.transparent_bg = true
+			DialogTheme.apply_controls(dialog)
 			dialog.get_ok_button().theme_type_variation = "DialogPrimaryButton"
 			if dialog is ConfirmationDialog:
 				dialog.get_cancel_button().theme_type_variation = "DialogButton"

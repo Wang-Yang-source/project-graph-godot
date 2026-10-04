@@ -5,7 +5,7 @@ const Palette = preload("res://src/main/theme_palette.gd")
 
 
 static func configure(target: Theme, light: bool) -> void:
-	var surface := Palette.color(light, "surface.panel")
+	var surface := Palette.color(light, "surface.raised")
 	var field := Palette.color(light, "surface.field")
 	var border := Palette.color(light, "border.default")
 	var text := Palette.color(light, "text.primary")
@@ -19,11 +19,11 @@ static func configure(target: Theme, light: bool) -> void:
 	background.corner_radius_top_left = 0
 	background.corner_radius_top_right = 0
 	target.set_stylebox("panel", "DialogSurface", background)
-	var accept_panel := _panel(Color.TRANSPARENT, Color.TRANSPARENT, 20, 0)
+	var accept_panel := _panel(Color.TRANSPARENT, Color.TRANSPARENT, 24, 0)
 	target.set_stylebox("panel", "AcceptDialog", accept_panel)
-	target.set_constant("buttons_min_height", "AcceptDialog", 36)
-	target.set_constant("buttons_min_width", "AcceptDialog", 88)
-	target.set_constant("buttons_separation", "AcceptDialog", 16)
+	target.set_constant("buttons_min_height", "AcceptDialog", 40)
+	target.set_constant("buttons_min_width", "AcceptDialog", 96)
+	target.set_constant("buttons_separation", "AcceptDialog", 12)
 
 	var frame := Corners.source(target.get_stylebox("embedded_border", "Window")).duplicate() as StyleBoxFlat
 	if frame != null:
@@ -69,12 +69,12 @@ static func configure(target: Theme, light: bool) -> void:
 	target.set_type_variation("DialogButton", "Button")
 	target.set_type_variation("DialogPrimaryButton", "DialogButton")
 	for state in ["normal", "hover", "pressed", "hover_pressed", "disabled"]:
-		var color := field
+		var color := hover
 		if state == "hover":
-			color = hover
+			color = Palette.color(light, "surface.pressed")
 		elif state in ["pressed", "hover_pressed"]:
 			color = selected
-		var button := _panel(color, Color.TRANSPARENT, 10, 5)
+		var button := _panel(color, Color.TRANSPARENT, 10, 8)
 		button.content_margin_top = 7
 		button.content_margin_bottom = 7
 		target.set_stylebox(state, "DialogButton", button)
@@ -113,7 +113,7 @@ static func configure(target: Theme, light: bool) -> void:
 	target.set_type_variation("DialogTextEdit", "TextEdit")
 	for type in ["DialogField", "DialogOption", "DialogTextEdit"]:
 		for state in ["normal", "hover", "pressed", "hover_pressed", "read_only"]:
-			var box := _panel(hover if state == "hover" else field, Color.TRANSPARENT, 10, 5)
+			var box := _panel(hover if state == "hover" else field, Color.TRANSPARENT, 10, 8)
 			box.content_margin_top = 6
 			box.content_margin_bottom = 6
 			target.set_stylebox(state, type, box)
@@ -138,6 +138,7 @@ static func configure(target: Theme, light: bool) -> void:
 static func apply_controls(dialog: Window) -> void:
 	# 内容面板透明，由 embedded_border 绘制完整表面；视口必须同步透明。
 	dialog.transparent_bg = true
+	_register_modal_backdrop(dialog)
 	_remove_saved_scrollbars(dialog)
 	for control in dialog.find_children("*", "Control", true, false):
 		if control is CheckButton:
@@ -181,3 +182,37 @@ static func _remove_saved_scrollbars(node: Node) -> void:
 			child.free()
 		else:
 			_remove_saved_scrollbars(child)
+
+
+## Native exclusive windows keep input ownership; the backdrop only dims the canvas.
+static func _register_modal_backdrop(dialog: Window) -> void:
+	if not dialog is AcceptDialog or not dialog.exclusive or dialog.has_meta("_modal_backdrop_registered"):
+		return
+	var overlay := dialog.get_parent()
+	if overlay == null:
+		return
+	var backdrop := overlay.get_node_or_null("ModalBackdrop") as ColorRect
+	if backdrop == null:
+		backdrop = ColorRect.new()
+		backdrop.name = "ModalBackdrop"
+		backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		backdrop.z_index = 100
+		overlay.add_child(backdrop)
+		backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		backdrop.hide()
+	dialog.set_meta("_modal_backdrop_registered", true)
+	dialog.visibility_changed.connect(_sync_modal_backdrop.bind(overlay, backdrop))
+	_sync_modal_backdrop(overlay, backdrop)
+
+
+static func _sync_modal_backdrop(overlay: Node, backdrop: ColorRect) -> void:
+	if not is_instance_valid(backdrop):
+		return
+	for child in overlay.get_children():
+		if child is AcceptDialog and child.exclusive and child.visible:
+			var style := Corners.source(child.get_theme_stylebox("embedded_border"))
+			var light := style != null and style.bg_color.get_luminance() > 0.5
+			backdrop.color = Color("#11111b", 0.16 if light else 0.28)
+			backdrop.show()
+			return
+	backdrop.hide()
