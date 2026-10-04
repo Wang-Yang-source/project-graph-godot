@@ -36,7 +36,10 @@ var is_dragging: bool = false:
 var drag_controlled := false:
 	set(value):
 		drag_controlled = value
-		freeze = value
+		# Keep contacts dynamic; only the physics callback drives the gesture.
+		freeze = false
+		if value:
+			sleeping = false
 var drag_offset: Vector2 = Vector2.ZERO
 var is_throwing := false:
 	set(value):
@@ -219,8 +222,23 @@ func _update_drag_target(world_pointer := Vector2.INF) -> void:
 	for object in _drag_origins:
 		if is_instance_valid(object):
 			object._drag_target = _drag_origins[object] + displacement
-			object.global_position = object._drag_target
 			object.sleeping = false
+
+
+func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
+	if _position_sync_pending:
+		var pose := state.transform
+		pose.origin = _position_sync_target
+		state.transform = pose
+		state.linear_velocity = Vector2.ZERO
+		_position_sync_pending = false
+	if drag_controlled:
+		# Upstream's velocity-following gesture, applied on the native physics clock.
+		# Bound the gain by the timestep so a slow frame cannot overshoot the target.
+		var gain := minf(20.0, 1.0 / maxf(state.step, 0.001))
+		state.linear_velocity = ((_drag_target - state.transform.origin) * gain).limit_length(throw_speed_limit)
+		state.angular_velocity = 0.0
+	super._integrate_forces(state)
 
 
 # Input events and physics catch-up may report the same target repeatedly.
@@ -318,5 +336,5 @@ func move_without_inertia(world_position: Vector2) -> void:
 	stop_throw()
 	global_position = world_position
 	_position_sync_target = world_position
-	_position_sync_pending = false
+	_position_sync_pending = true
 	sleeping = false

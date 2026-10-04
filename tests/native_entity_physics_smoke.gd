@@ -42,7 +42,7 @@ func _run() -> void:
 	press.position = stage.get_canvas_transform() * a.global_position
 	a._on_input_event(stage.get_viewport(), press, 0)
 	a.set_physics_process(false)
-	check(a.freeze and a.freeze_mode == RigidBody2D.FREEZE_MODE_KINEMATIC, "Pointer driver uses native kinematic freeze mode")
+	check(not a.freeze and a.drag_controlled, "Pointer driver remains dynamic on the native physics clock")
 	var passive_origin = b.global_position
 	for i in 45:
 		a._update_drag_target(Vector2(5.0 * (i + 1), 400))
