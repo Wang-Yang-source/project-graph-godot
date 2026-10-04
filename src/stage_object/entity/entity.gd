@@ -146,9 +146,13 @@ func _refresh_collision_outline() -> void:
 		and _physics_outline.transform == _collision_outline_transform
 	):
 		return
+	var previous_shape: Shape2D = _physics_outline.shape if _physics_outline != null else null
+	var previous_transform := _physics_outline.transform if _physics_outline != null else Transform2D.IDENTITY
+	var was_disabled := _physics_outline == null or _physics_outline.disabled
 	if not initialized:
-		if _physics_outline != null:
+		if _physics_outline != null and not _physics_outline.disabled:
 			_physics_outline.disabled = true
+			_notify_native_collision_changed()
 		return
 	if _physics_outline == null:
 		_physics_outline = CollisionShape2D.new()
@@ -178,6 +182,14 @@ func _refresh_collision_outline() -> void:
 	_collision_outline_key = outline_key
 	_collision_outline_shape = _physics_outline.shape
 	_collision_outline_transform = _physics_outline.transform
+	if was_disabled or previous_shape != _physics_outline.shape or previous_transform != _physics_outline.transform:
+		_notify_native_collision_changed()
+
+
+func _notify_native_collision_changed() -> void:
+	var session := get_parent().get_node_or_null("PhysicsSession")
+	if session != null and session.has_method("invalidate_contact_bounds"):
+		session.call("invalidate_contact_bounds", self)
 
 
 func _uses_native_physics() -> bool:

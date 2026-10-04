@@ -9,6 +9,7 @@ var _members := {}
 var _group_followers: Dictionary = {}
 var _follower_rids: Array[RID] = []
 var _group_topology_revision := -1
+var _contact_topology_revision := -1
 var _stable := 0
 var active := false
 var _shape := RectangleShape2D.new()
@@ -71,7 +72,43 @@ func sync_group_followers(physics_only := false) -> void:
 	if target_root is Stage:
 		_group_topology_revision = target_root.topology_revision
 
+# Containment exclusions are per query: a driver's ancestor can still be a
+# legitimate external contact of another driver in the same session.
+func _query_exclusions(body: Entity, shared: Array[RID]) -> Array[RID]:
+	var ancestor := body.container
+	if not is_instance_valid(ancestor):
+		return shared
+	var result: Array[RID] = shared.duplicate()
+	var seen := {}
+	while is_instance_valid(ancestor) and not seen.has(ancestor):
+		seen[ancestor] = true
+		if ancestor.get_parent() == target_root and not result.has(ancestor.get_rid()):
+			result.append(ancestor.get_rid())
+		ancestor = ancestor.container
+	return result
+
+func _refresh_contact_topology() -> void:
+	if target_root is Stage:
+		if _contact_topology_revision == target_root.topology_revision:
+			return
+		_contact_topology_revision = target_root.topology_revision
+	# If a bounds-only contact cache is enabled, unchanged driver bounds must
+	# not suppress discovery after creation, removal or containment changes.
+	invalidate_contact_bounds()
+	_follower_rids.clear()
+	for child in _group_followers:
+		if is_instance_valid(child) and not child.is_queued_for_deletion() and is_instance_valid(child._rigid_follow_owner) and child.is_inside_container(child._rigid_follow_owner):
+			_follower_rids.append(child.get_rid())
+
+# A newly ready or resized external hull can affect every stationary driver.
+# Common world translation never calls this shape-ready notification.
+func invalidate_contact_bounds(_changed_body: Entity = null) -> void:
+	var bounds_cache: Variant = get("_contact_bounds")
+	if bounds_cache is Dictionary:
+		bounds_cache.clear()
+
 func _activate_contacts() -> void:
+	_refresh_contact_topology()
 	var space := target_root.get_world_2d().direct_space_state
 	var queue := _members.keys()
 	var excluded: Array[RID] = _follower_rids.duplicate()
@@ -93,7 +130,7 @@ func _activate_contacts() -> void:
 		query.shape = _shape
 		query.transform = Transform2D(0.0, bounds.get_center())
 		query.collision_mask = 1
-		query.exclude = excluded
+		query.exclude = _query_exclusions(body, excluded)
 		var hits := space.intersect_shape(query, 256)
 		for hit in hits:
 			var candidate: Variant = hit.collider
@@ -148,6 +185,7 @@ func end() -> void:
 	_group_followers.clear()
 	_follower_rids.clear()
 	_group_topology_revision = -1
+	_contact_topology_revision = -1
 	for body in _members:
 		if is_instance_valid(body) and not body.is_queued_for_deletion():
 			body.stop_throw()
