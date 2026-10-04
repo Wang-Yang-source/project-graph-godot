@@ -547,15 +547,66 @@ static func _make_canvas_font(original: Font) -> Font:
 
 
 # 包含状态由子对象引用推导，不更换对象身份，因此连线和属性仍指向原节点。
-func update_container_layout(members: Array[Entity]) -> void:
-	_update_fill_layer(members)
-	_apply_appearance(false)
-	var layout_key := [global_transform, label.get_minimum_size(), fixed_width]
+func _container_layout_inputs(members: Array[Entity]) -> Array:
+	var basis := Transform2D(global_transform.x, global_transform.y, Vector2.ZERO)
+	var header := [basis, label.get_minimum_size(), fixed_width, fill_color,
+		border_color, use_theme_border, text, font_size, _editing, _small_text,
+		_display_theme_is_light()]
+	var inverse := global_transform.affine_inverse()
+	var entries := []
 	for member in members:
-		layout_key.append([member.get_instance_id(), member.geometry_version])
-	if layout_key == _container_layout_key:
+		var local_shape: Array = []
+		var appearance: Array = []
+		if member is TextNode:
+			local_shape = member.get_visual_outline_key()
+			appearance = [member.fill_color, member._fill_layer, member.border_color,
+				member.use_theme_border, member.text, member.font_size, member._small_text]
+		else:
+			for child in member.get_children():
+				var collision := child as CollisionShape2D
+				if collision == null or collision.shape == null or collision.has_meta("physics_outline"):
+					continue
+				if collision.disabled and not collision.has_meta("editor_geometry_only"):
+					continue
+				local_shape.append([collision.transform, collision.shape.get_rect()])
+		entries.append([member.get_instance_id(), member.shape_version,
+			inverse * member.global_transform, local_shape, appearance])
+	return [header, entries]
+
+
+func _same_container_layout_inputs(candidate: Array) -> bool:
+	if _container_layout_key.size() != 2 or candidate[0] != _container_layout_key[0]:
+		return false
+	var before: Array = _container_layout_key[1]
+	var after: Array = candidate[1]
+	if before.size() != after.size():
+		return false
+	var pixels_per_unit := maxf((get_viewport().get_final_transform() * get_global_transform_with_canvas()).x.length(), 0.001)
+	var positional_tolerance := minf(0.001, 0.05 / pixels_per_unit)
+	for index in after.size():
+		var a: Array = before[index]
+		var b: Array = after[index]
+		if a[0] != b[0] or a[1] != b[1] or a[3] != b[3] or a[4] != b[4]:
+			return false
+		var old_pose: Transform2D = a[2]
+		var new_pose: Transform2D = b[2]
+		if old_pose.x != new_pose.x or old_pose.y != new_pose.y:
+			return false
+		# Float32 world-coordinate subtraction can jitter after common motion.
+		# Keep the tolerance bounded in local units and retain the old key so
+		# real sub-tolerance movement accumulates until it invalidates.
+		if old_pose.origin.distance_squared_to(new_pose.origin) > positional_tolerance * positional_tolerance:
+			return false
+	return true
+
+
+func update_container_layout(members: Array[Entity]) -> void:
+	var layout_key := _container_layout_inputs(members)
+	if _same_container_layout_inputs(layout_key):
 		return
 	_container_layout_key = layout_key
+	_update_fill_layer(members)
+	_apply_appearance(false)
 	var active := not members.is_empty()
 	if active != _container_active:
 		_container_active = active
