@@ -447,7 +447,9 @@ func _update_native_previews() -> void:
 		var bounds: Rect2 = _group_rects[identifier]
 		var pixels := maxf(bounds.size.x, bounds.size.y) * _frame_scale
 		var requested := clampi(int(pow(2.0, ceilf(log(maxf(pixels * 2.0, 512.0)) / log(2.0)))), 512, 4096)
-		_native_resolutions[identifier] = maxi(int(_native_resolutions.get(identifier, 512)), requested)
+		# Keep the highest sampled resolution while this group remains active.
+		# Oscillating across a zoom boundary must not rebuild the same texture.
+		_native_resolutions[identifier] = maxi(int(_native_resolutions.get(identifier, 0)), requested)
 		resolutions.append(_native_resolutions[identifier])
 	for identifier in _native_resolutions.keys():
 		if not roots.has(identifier):
