@@ -54,6 +54,7 @@ var _miniatures := {}
 var _native_previews := {}
 var _native_preview_key: Array = []
 var _native_resolutions := {}
+var _exiting := false
 
 
 func _ready() -> void:
@@ -694,13 +695,25 @@ func _restore(key: int) -> void:
 			item.node.mouse_filter = item.mouse_filter
 	if is_instance_valid(state.object):
 		state.object.input_pickable = state.pickable
-	if is_instance_valid(state.object) and state.object is LineEdge:
-		state.object._queue_refresh()
-		state.object.get_node("Caption")._queue_refresh()
+	if is_instance_valid(state.object) and state.object.is_inside_tree() and not _exiting:
+		_refresh_restored_canvas(state.object)
+		if state.object is LineEdge:
+			var caption: Node = state.object.get_node("Caption")
+			caption._queue_refresh()
+			caption._process(0.0)
 	_suppressed.erase(key)
 
 
+func _refresh_restored_canvas(node: Node) -> void:
+	# Restored nodes must use this frame's camera basis before they can draw.
+	if node.has_method("refresh_for_view"):
+		node.call("refresh_for_view")
+	for child in node.get_children():
+		_refresh_restored_canvas(child)
+
+
 func _exit_tree() -> void:
+	_exiting = true
 	for key in _suppressed.keys():
 		_restore(key)
 

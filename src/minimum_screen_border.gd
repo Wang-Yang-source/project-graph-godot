@@ -50,16 +50,22 @@ func _queue_refresh(_world_rect: Rect2 = Rect2(), _zoom_steps: float = 0.0) -> v
 	set_process(true)
 
 
+func refresh_for_view() -> void:
+	# visibility_layer changes do not emit visibility_changed.
+	_view_cache_valid = false
+	_process(0.0)
+
+
 func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
 	if not _view_cache_valid:
-		set_process(true)
+		_process(0.0)
 		return
 	var was_in_view := _in_view
 	_in_view = world_rect.intersects(_view_bounds, true)
 	# Panning moves the canvas, not the baked border. Wake only on entry or
 	# when its existing per-octave sampling bucket changes.
 	if _in_view and (not was_in_view or floori(zoom_steps + _zoom_step_offset) != _view_bucket):
-		set_process(true)
+		_process(0.0)
 
 
 func _process(_delta: float) -> void:

@@ -26,7 +26,7 @@ func _run() -> void:
 	source.freeze = true
 	target.freeze = true
 	var edge := stage.connect_entities(source, target)
-	stage.camera.zoom = Vector2.ONE * .45
+	stage.camera.zoom = Vector2.ONE * 1.5
 	stage.camera.target_zoom = stage.camera.zoom
 	await create_timer(.2).timeout
 	if DisplayServer.get_name() != "headless":
@@ -59,7 +59,7 @@ func _run() -> void:
 	var stroke_mesh: Mesh
 	var observed := false
 	for frame in 40:
-		stage.camera.target_zoom = Vector2.ONE * (.2 + .08 * sin(frame * .15))
+		stage.camera.target_zoom = Vector2.ONE * (1.2 + .3 * sin(frame * .15))
 		await process_frame
 		if stage.camera._zoom_animation_active and edge.line.scale == Vector2.ONE:
 			check(edge.line.material is ShaderMaterial, "Smooth zoom uses the stroke shader")

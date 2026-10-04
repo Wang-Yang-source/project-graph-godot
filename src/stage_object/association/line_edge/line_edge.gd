@@ -594,6 +594,12 @@ func _finish_zoom_stroke() -> void:
 		set_process(true)
 
 
+func refresh_for_view() -> void:
+	# Overview restoration happens after the edge's normal process priority.
+	_refresh_key.clear()
+	_process(0.0)
+
+
 func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
 	var entered := not _in_view
 	_in_view = world_rect.intersects(_view_bounds, true)
@@ -605,7 +611,8 @@ func _on_view_changed(world_rect: Rect2, zoom_steps: float) -> void:
 	if not is_equal_approx(local_scale, 1.0):
 		zoom_steps += log(maxf(local_scale, 0.01)) / log(2.0) * 16.0
 	if entered or floori(zoom_steps + _bucket_offset) != _render_bucket:
-		set_process(true)
+		# Enabling processing here joins the next frame; render this view now.
+		_process(0.0)
 
 
 func _on_endpoint_exiting() -> void:
