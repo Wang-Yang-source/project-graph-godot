@@ -108,6 +108,8 @@ var _zoom_mesh_geometry_key: Array = []
 static var _screen_stroke_materials: Dictionary = {}
 var _shaft_points := PackedVector2Array()
 var _caption_curve := Curve2D.new()
+var _caption_translation := Vector2.ZERO
+var _translation_view_key: Array = []
 var _head_length := 0.0
 @onready var _unscaled_line_width: float = %Line.width
 
@@ -203,8 +205,16 @@ func _process(_delta: float) -> void:
 	var max_render_scale := maxf(1.0, stage.camera.max_zoom if stage != null else 3.0)
 	var render_segments := clampi(ceili(curve_segments * sqrt(max_render_scale)), curve_segments, 512)
 	var key := [source_rect, target_rect, global_transform, collision_shape.transform,
-		(arrow_head.get_parent() as Node2D).global_transform, render_segments]
+		(arrow_head.get_parent() as Node2D).global_transform, render_segments,
+		source.get_instance_id(), target.get_instance_id(), show_arrow, _unscaled_line_width]
+	var translation_view_key := [pixel_scale, shader_active, get_viewport().get_final_transform()]
+	var same_view := translation_view_key == _translation_view_key
+	_translation_view_key = translation_view_key
 	if key != _geometry_key:
+		if same_view and _translate_cached_geometry(key):
+			set_process(false)
+			return
+		_caption_translation = Vector2.ZERO
 		_geometry_key = key
 		_render_key.clear()
 		_line_geometry_key.clear()
@@ -238,7 +248,7 @@ func _process(_delta: float) -> void:
 		var mesh_key := [_geometry_key, _unscaled_line_width, stage.camera.min_zoom, get_viewport().get_final_transform()]
 		if mesh_key != _zoom_mesh_geometry_key:
 			_zoom_mesh_geometry_key = mesh_key.duplicate()
-			_zoom_mesh.update_stroke(global_transform.affine_inverse() * _shaft_points, _unscaled_line_width, stage.camera.min_zoom, maxf(get_viewport().get_final_transform().get_scale().x, 1.0))
+			_zoom_mesh.update_stroke(_zoom_mesh.global_transform.affine_inverse() * _shaft_points, _unscaled_line_width, stage.camera.min_zoom, maxf(get_viewport().get_final_transform().get_scale().x, 1.0))
 	var render_key := [pixel_scale, line.global_transform]
 	if render_key == _render_key:
 		set_process(false)
@@ -256,6 +266,51 @@ func _process(_delta: float) -> void:
 		])
 
 	set_process(false)
+
+
+func _translate_cached_geometry(key: Array) -> bool:
+	if _geometry_key.size() != key.size() or _shaft_points.is_empty():
+		return false
+	var old_source: Rect2 = _geometry_key[0]
+	var old_target: Rect2 = _geometry_key[1]
+	var new_source: Rect2 = key[0]
+	var new_target: Rect2 = key[1]
+	if old_source.size != new_source.size or old_target.size != new_target.size:
+		return false
+	if _geometry_key.slice(2) != key.slice(2):
+		return false
+	var displacement := new_source.position - old_source.position
+	# Exact equality keeps non-rigid motion on the ordinary rebuild path.
+	if displacement.is_zero_approx() or displacement != new_target.position - old_target.position:
+		return false
+	var shaft_position := line.global_position
+	var tip_position := arrow_head.global_position
+	var collision_position := collision_shape.global_position
+	var mesh_current: bool = (
+		_zoom_mesh != null
+		and not _zoom_mesh_geometry_key.is_empty()
+		and _zoom_mesh_geometry_key[0] == _geometry_key
+	)
+	# Local vertices and segments stay untouched; only child-node poses change.
+	line.global_position = shaft_position + displacement
+	arrow_head.global_position = tip_position + displacement
+	collision_shape.global_position = collision_position + displacement
+	if _zoom_mesh != null:
+		_zoom_mesh.global_position += displacement
+	# Keep the existing world-point interface for bounds and callers. Native
+	# array transformation avoids tessellation and rebuilding caption baking.
+	_shaft_points = Transform2D(0.0, displacement) * _shaft_points
+	_caption_translation += displacement
+	_view_bounds.position += displacement
+	key[3] = collision_shape.transform
+	key[4] = (arrow_head.get_parent() as Node2D).global_transform
+	_geometry_key = key
+	if mesh_current:
+		_zoom_mesh_geometry_key[0] = _geometry_key.duplicate()
+	_render_key = [_translation_view_key[0], line.global_transform]
+	_line_geometry_key = [line.global_transform]
+	invalidate_geometry()
+	return true
 
 
 # Shared materials keep the mesh stable while the shader computes screen coverage.
@@ -297,7 +352,7 @@ static func _stroke_texture(screen_width: float) -> GradientTexture2D:
 func caption_position(fraction: float) -> Vector2:
 	if _caption_curve.point_count == 0:
 		return Vector2.ZERO
-	return to_local(_caption_curve.sample_baked(_caption_curve.get_baked_length() * fraction))
+	return to_local(_caption_curve.sample_baked(_caption_curve.get_baked_length() * fraction) + _caption_translation)
 
 
 # A container-to-descendant edge attaches to its title, not the surrounding frame.
