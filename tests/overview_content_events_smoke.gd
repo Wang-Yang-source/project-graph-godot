@@ -112,6 +112,13 @@ func _run() -> void:
 	await settle()
 	check(overview._preview_parents.get(members[2].get_instance_id(), 0) == other_id, "Reparenting updates preview ownership")
 	check(overview._native_previews[other_id].image != other_image, "Topology changes refresh the receiving group's pixels")
+	var topology_before: int = stage.topology_revision
+	image = overview._native_previews[group_id].image
+	members[4].topic_parent = members[3]
+	await settle()
+	check(stage.topology_revision > topology_before, "Logical parent edits publish a topology revision")
+	check(overview._preview_parents.get(members[4].get_instance_id(), 0) == members[3].get_instance_id(), "Existing nodes update their logical preview parent immediately")
+	check(overview._native_previews[group_id].image != image, "Logical reparenting refreshes preview ownership and content")
 	view.queue_free()
 	await process_frame
 	print("OVERVIEW_CONTENT_EVENTS: ", "PASS" if failures.is_empty() else str(failures))

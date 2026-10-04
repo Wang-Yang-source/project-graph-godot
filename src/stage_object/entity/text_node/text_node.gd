@@ -28,6 +28,7 @@ var _edit_menu: PopupMenu
 @export var topic_parent: TextNode:
 	set(value):
 		topic_parent = value
+		notify_topology_change()
 		notify_persistent_change()
 
 @export var text: String = "":

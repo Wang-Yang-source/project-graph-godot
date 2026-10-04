@@ -15,3 +15,5 @@ Manual validation:
 3. Repeat with a nested group, undo/redo and reopening the document. Check for stale pixels, missing content changes, incorrect ownership after reparenting, or gradual relative drift.
 
 The diagnostic counters count full content walks and member reads. Geometry notifications still require lightweight checks for changed members. This change does not establish a stable 60 FPS frame budget.
+
+Logical parent changes also call the existing topology notification: changing `TextNode.topic_parent` increments stage topology/layout revisions and rebuilds preview ownership. The regression changes an existing member's logical parent and checks both the new preview parent and refreshed image. Manually change a node's logical parent, then check the collapsed group's membership and title/content composition; stale ownership after undo/redo indicates a topology invalidation failure.
