@@ -3,6 +3,10 @@ extends Node2D
 const DocumentModel = preload("res://src/storage/graph_document.gd")
 var document_model := DocumentModel.new()
 var _document_model_revision := -1
+var _document_views := PackedStringArray()
+var _document_sync_depth := 0
+var _document_sync_error := ""
+var _saved_document: Dictionary = {}
 
 
 const InitialLoader = preload("res://src/project_loader.gd")
@@ -58,6 +62,8 @@ func _ready() -> void:
 	child_entered_tree.connect(_on_stage_child_changed)
 	child_exiting_tree.connect(_on_stage_child_changed)
 	_saved_snapshot = StageObjectRegistry.capture(self)
+	document_model.replace_snapshot(_saved_snapshot)
+	_saved_document = document_model.native_document()
 	_saved_comparison_state = StageObjectRegistry.comparison_state(self)
 	_dirty_revision = -1
 	_cached_dirty = false
@@ -176,6 +182,10 @@ func drag_entities() -> Array[Entity]:
 
 func selected_objects() -> Array[StageObject]:
 	var result: Array[StageObject] = []
+	if not is_loading and not selected_ids.is_empty() and _document_sync_depth == 0:
+		var live := _live_document_ids()
+		if not Array(selected_ids).all(func(identifier): return live.has(identifier)):
+			materialize_document_ids(selected_ids)
 	if selected_ids.is_empty():
 		return result
 	for object in stage_objects():
@@ -219,11 +229,8 @@ func is_overview_hidden(object: StageObject) -> bool:
 
 
 func select_all() -> void:
-	var ids := PackedStringArray()
-	for object in stage_objects():
-		if not is_overview_hidden(object):
-			ids.append(object.id)
-	select_ids(ids)
+	document_snapshot()
+	select_ids(document_model.ids())
 
 
 func cancel_marquee_selection() -> void:
@@ -333,41 +340,29 @@ func _refresh_selection_outlines() -> void:
 
 
 func delete_objects(objects: Array[StageObject], preserve_contents := false) -> void:
-	if objects.is_empty():
-		return
+	var identifiers := PackedStringArray()
+	for object in objects:
+		identifiers.append(object.id)
+	delete_document_ids(identifiers, preserve_contents)
+
+func delete_document_ids(identifiers: PackedStringArray, preserve_contents := false) -> bool:
+	if identifiers.is_empty():
+		return false
 	$EntityLayerMover.cancel()
 	finish_text_editing()
-	var targets := objects.duplicate()
-	# 删除容器同时删除其内容；引用这些对象的连线随后一并清理。
-	for object in stage_objects():
-		if object is Entity:
-			for root in objects:
-				if not preserve_contents and root is Entity and object.is_inside_container(root) and not targets.has(object):
-					targets.append(object)
-					break
-	for object in stage_objects():
-		if object is LineEdge and (targets.has(object.source) or targets.has(object.target)) and not targets.has(object):
-			targets.append(object)
 	history.begin_transaction()
-	if preserve_contents:
-		for object in stage_objects():
-			if not object is Entity or targets.has(object):
-				continue
-			var owner: Entity = object.container
-			while is_instance_valid(owner) and targets.has(owner):
-				owner = owner.container
-			if object.container != owner:
-				object.container = owner
-	for object in stage_objects():
-		if object is TextNode and targets.has(object.topic_parent) and not targets.has(object):
-			object.topic_parent = null
-	for object in targets:
-		remove_child(object)
-		object.queue_free()
-	$EntityLayerMover.reset_tracking()
+	var result: Dictionary = document_model.remove_ids(identifiers, preserve_contents)
+	if not result.ok:
+		file_error.emit(result.get("error", "无法删除对象"))
+		history._transaction_snapshot = {}
+		return false
+	var snapshot_data: Dictionary = document_model.snapshot()
+	snapshot_data.erase("camera")
+	await restore_document_snapshot(snapshot_data)
 	select_ids(PackedStringArray())
 	history.commit(not preserve_contents)
 	document_changed.emit()
+	return true
 
 
 func finish_interaction() -> void:
@@ -424,7 +419,8 @@ func is_dirty() -> bool:
 		if object is TextNode and object._editing and object.text_edit.text != object.text:
 			return true
 	if _dirty_revision != document_revision:
-		_cached_dirty = not StageObjectRegistry.matches_comparison_state(self, _saved_comparison_state)
+		document_snapshot()
+		_cached_dirty = not _document_sync_error.is_empty() or document_model.native_document() != _saved_document
 		_dirty_revision = document_revision
 	return _cached_dirty
 
@@ -497,14 +493,120 @@ func finish_text_editing() -> void:
 ## During the all-node transition, reconcile edits once per persistent revision.
 ## Saving and history consume the complete data snapshot rather than sharing nodes.
 func document_snapshot() -> Dictionary:
-	if _document_model_revision != document_revision:
-		var captured := StageObjectRegistry.capture(self)
-		var prepared: Dictionary = document_model.replace_snapshot(captured)
-		if not prepared.ok:
-			push_error("无法同步文档模型: " + str(prepared.get("error", "")))
-			return captured
-		_document_model_revision = document_revision
-	return document_model.snapshot()
+	var captured := StageObjectRegistry.capture(self)
+	var prepared: Dictionary = document_model.reconcile_views(captured, _document_views)
+	if not prepared.ok:
+		_document_sync_error = str(prepared.get("error", "无法同步文档模型"))
+		push_error("无法同步文档模型: " + _document_sync_error)
+		# Never save a partial view capture when reconciliation fails.
+		return document_model.snapshot()
+	_document_sync_error = ""
+	_document_views = _live_document_ids()
+	_document_model_revision = document_revision
+	var snapshot_data: Dictionary = document_model.snapshot()
+	snapshot_data.erase("camera")
+	return snapshot_data
+
+func _live_document_ids() -> PackedStringArray:
+	var identifiers := PackedStringArray()
+	for object in stage_objects():
+		identifiers.append(object.id)
+	return identifiers
+
+
+## Recycle presentation without deleting its record or entering history.
+
+func release_document_views(identifiers: PackedStringArray) -> void:
+	document_snapshot()
+	_document_sync_depth += 1
+	for object in stage_objects():
+		if identifiers.has(object.id):
+			remove_child(object)
+			object.queue_free()
+			var index := _document_views.find(object.id)
+			if index >= 0:
+				_document_views.remove_at(index)
+	_document_sync_depth -= 1
+	group_overview.invalidate()
+
+
+## Dependencies use stable IDs. Containers include their full membership while
+## the existing native container presenter still derives geometry from children.
+
+func _document_view_closure(identifiers: PackedStringArray) -> PackedStringArray:
+	var chosen := {}
+	var queue := Array(identifiers)
+	var cursor := 0
+	while cursor < queue.size():
+		var identifier: String = queue[cursor]
+		cursor += 1
+		if chosen.has(identifier):
+			continue
+		var record: Dictionary = document_model.record(identifier)
+		if record.is_empty():
+			continue
+		chosen[identifier] = true
+		queue.append_array(record.references.values())
+		if record.type == "venn_region":
+			queue.append_array(Array(record.properties.get("member_ids", PackedStringArray())))
+		queue.append_array(Array(document_model.children(identifier)))
+	return PackedStringArray(chosen.keys())
+
+func materialize_document_ids(identifiers: PackedStringArray) -> void:
+	var wanted := _document_view_closure(identifiers)
+	var by_id := {}
+	for object in stage_objects():
+		by_id[object.id] = object
+	var references: Array[Dictionary] = []
+	var snapshot_data: Dictionary = document_model.snapshot()
+	_document_sync_depth += 1
+	for record in snapshot_data.objects:
+		var identifier: String = JSON.to_native(record.properties.id)
+		if not wanted.has(identifier) or by_id.has(identifier):
+			continue
+		var object := StageObjectRegistry.instantiate_record(record, references)
+		if object == null:
+			file_error.emit("无法准备文档对象: " + identifier)
+			continue
+		if object is TextNode and has_meta("load_canvas_font"):
+			object.set_meta("prepared_canvas_font", get_meta("load_canvas_font"))
+		add_child(object)
+		apply_object_preferences(object)
+		by_id[identifier] = object
+	for reference in references:
+		reference.object.set(reference.property, by_id.get(reference.reference_id))
+	StageObjectRegistry.resolve_object_references(self, by_id)
+	_document_sync_depth -= 1
+	_document_views = _live_document_ids()
+	$EntityLayerMover.reset_tracking()
+	group_overview.invalidate()
+
+func restore_document_snapshot(snapshot_data: Dictionary) -> void:
+	var previous: Dictionary = document_model.native_document()
+	var wanted := _live_document_ids()
+	var prepared: Dictionary = document_model.replace_snapshot(snapshot_data)
+	if not prepared.ok:
+		push_error(prepared.get("error", "无法恢复文档"))
+		return
+	var old_records := {}
+	for record in previous.objects:
+		old_records[record.id] = record
+	for identifier in document_model.ids():
+		if old_records.get(identifier) != document_model.record(identifier) and not wanted.has(identifier):
+			wanted.append(identifier)
+	var closure := _document_view_closure(wanted)
+	var visible_records := []
+	for record in snapshot_data.objects:
+		if closure.has(str(JSON.to_native(record.properties.id))):
+			visible_records.append(record)
+	_document_sync_depth += 1
+	await StageObjectRegistry.restore(self, {"objects": visible_records})
+	_document_sync_depth -= 1
+	_document_views = _live_document_ids()
+	document_revision += 1
+	layout_revision += 1
+	_document_model_revision = document_revision
+	group_overview.invalidate()
 
 func save_to_file(path: String) -> bool:
 	if is_loading:
@@ -513,6 +615,9 @@ func save_to_file(path: String) -> bool:
 	finish_text_editing()
 	$EntityLayerMover.refresh_layout()
 	var snapshot := document_snapshot()
+	if not _document_sync_error.is_empty():
+		file_error.emit(_document_sync_error)
+		return false
 	var camera_state := {
 		"position": [camera.target_position.x, camera.target_position.y],
 		"zoom": camera.target_zoom.x,
@@ -530,6 +635,7 @@ func save_to_file(path: String) -> bool:
 	created_at = result.created_at
 	_preserved_entries = result.get("preserved_entries", _preserved_entries)
 	_saved_snapshot = snapshot.duplicate(true)
+	_saved_document = document_model.native_document()
 	_saved_comparison_state = StageObjectRegistry.comparison_state(self)
 	_dirty_revision = -1
 	_cached_dirty = false
@@ -557,15 +663,34 @@ func start_initial_load(path: String) -> Node:
 
 
 func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison: Dictionary) -> void:
-	var prepared: Dictionary = document_model.replace_snapshot(snapshot)
-	if prepared.ok:
-		snapshot = document_model.snapshot()
-		_document_model_revision = document_revision
+	var prepared: Dictionary
+	if result.has("validated_document"):
+		prepared = document_model.replace_document(result.validated_document, result.validated_assets)
+	else:
+		prepared = document_model.replace_snapshot(result.get("graph", snapshot))
+	if not prepared.ok:
+		file_error.emit(prepared.get("error", "无法建立文档模型"))
+		return
+	var by_id := {}
+	for object in stage_objects():
+		by_id[object.id] = object
+	var slot := 0
+	for identifier in document_model.ids():
+		if not by_id.has(identifier):
+			continue
+		while slot < get_child_count() and not get_child(slot) is StageObject:
+			slot += 1
+		if by_id[identifier].get_index() != slot:
+			move_child(by_id[identifier], slot)
+		slot += 1
+	_document_views = _live_document_ids()
+	snapshot = document_snapshot()
 	_preserved_entries = result.get("preserved_entries", {})
 	history.clear(snapshot)
 	current_file_path = str(result.get("path", ""))
 	created_at = str(result.metadata.get("created_at", ""))
 	_saved_snapshot = snapshot
+	_saved_document = document_model.native_document()
 	_saved_comparison_state = comparison
 	_dirty_revision = -1
 	_cached_dirty = false
@@ -619,18 +744,26 @@ func connect_entities(from: Entity, to: Entity) -> LineEdge:
 
 
 func _on_stage_child_changed(child: Node) -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
 	if child is StageObject:
+		if not _document_views.has(child.id):
+			_document_views.append(child.id)
 		_editing_objects.erase(child.get_instance_id())
 		layout_revision += 1
 		document_revision += 1
 
 
 func mark_geometry_changed(object: StageObject) -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
 	if object is Entity:
 		layout_revision += 1
 
 
 func mark_document_changed() -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
 	document_revision += 1
 
 
@@ -643,12 +776,8 @@ func set_editor_active(object: StageObject, active: bool) -> void:
 
 func object_counts() -> Vector2i:
 	if _counts_revision != layout_revision:
-		_counts = Vector2i.ZERO
-		for object in stage_objects():
-			if object is Entity:
-				_counts.x += 1
-			elif object is Association:
-				_counts.y += 1
+		document_snapshot()
+		_counts = document_model.object_counts()
 		_counts_revision = layout_revision
 	return _counts
 

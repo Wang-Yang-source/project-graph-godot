@@ -46,3 +46,14 @@ static func digest(data: PackedByteArray) -> String:
 	context.start(HashingContext.HASH_SHA256)
 	context.update(data)
 	return context.finish().hex_encode()
+
+
+## An indexed raw block already carries its content identity. Reading and saving
+## still verify the bytes; this getter never claims that unrequested data was read.
+func content_id() -> String:
+	if _entry.has("archive_entry"):
+		return ""
+	var identifier: Variant = _entry.get("sha256", "")
+	if identifier is String and identifier.length() == 64 and identifier.is_valid_hex_number(false):
+		return identifier
+	return ""

@@ -130,3 +130,131 @@ func _rebuild_indexes() -> void:
 		if value.type == "venn_region":
 			for member in value.properties.get("member_ids", []):
 				_append(_memberships, member, value.id)
+
+
+## Merge only instantiated views. Missing uninstantiated records remain in the
+## document; only a previously tracked view that disappeared means deletion.
+func reconcile_views(view_snapshot: Dictionary, tracked_ids: PackedStringArray) -> Dictionary:
+	if not view_snapshot.get("objects") is Array:
+		return Codec.failure("视图缺少对象记录")
+	var replacement := {}
+	for value in view_snapshot.objects:
+		if not value is Dictionary or not value.get("properties") is Dictionary:
+			return Codec.failure("视图记录无效")
+		var identifier: Variant = JSON.to_native(value.properties.get("id"))
+		if not identifier is String or identifier.is_empty() or replacement.has(identifier):
+			return Codec.failure("视图 ID 为空或重复")
+		replacement[identifier] = value
+	var snapshot_data := snapshot()
+	var objects := []
+	var deleted := {}
+	for identifier in tracked_ids:
+		if not replacement.has(identifier):
+			deleted[identifier] = true
+	for previous in snapshot_data.objects:
+		var identifier: String = JSON.to_native(previous.properties.id)
+		if deleted.has(identifier):
+			continue
+		objects.append(replacement.get(identifier, previous))
+		replacement.erase(identifier)
+	for value in replacement.values():
+		objects.append(value)
+	snapshot_data.objects = objects
+	var decoded := Codec.from_snapshot(snapshot_data, _document.camera)
+	if not decoded.ok:
+		return decoded
+	if decoded.document == _document:
+		return {"ok": true, "changed": false}
+	var result := replace_document(decoded.document, decoded.assets)
+	result["changed"] = result.ok
+	return result
+
+## Container membership is independent of which descendants have live views.
+func move_subtrees(root_ids: PackedStringArray, displacement: Vector2) -> Dictionary:
+	if not displacement.is_finite():
+		return Codec.failure("位移数值无效")
+	var chosen := {}
+	var queue := Array(root_ids)
+	var cursor := 0
+	while cursor < queue.size():
+		var identifier: String = queue[cursor]
+		cursor += 1
+		if not _records.has(identifier):
+			return Codec.failure("移动对象不存在")
+		if chosen.has(identifier):
+			continue
+		chosen[identifier] = true
+		queue.append_array(Array(children(identifier)))
+	var changes := []
+	for identifier in chosen:
+		var before := record(identifier)
+		var after := before.duplicate(true)
+		after.transform.position += displacement
+		changes.append({"before": before, "after": after})
+	return apply_transaction(changes)
+
+## Delete complete container subtrees and endpoint edges in one model transaction.
+## Preserving contents reparents children to the nearest surviving ancestor.
+func remove_ids(identifiers: PackedStringArray, preserve_contents := false) -> Dictionary:
+	var removed := {}
+	var queue := Array(identifiers)
+	var cursor := 0
+	while cursor < queue.size():
+		var identifier: String = queue[cursor]
+		cursor += 1
+		if not _records.has(identifier):
+			return Codec.failure("删除对象不存在")
+		if removed.has(identifier):
+			continue
+		removed[identifier] = true
+		if not preserve_contents:
+			queue.append_array(Array(children(identifier)))
+		queue.append_array(Array(incident_edges(identifier)))
+	var changes := []
+	for before in _document.objects:
+		if removed.has(before.id):
+			changes.append({"before": before, "after": null})
+			continue
+		var after: Dictionary = before.duplicate(true)
+		if removed.has(after.references.get("topic_parent", "")):
+			after.references.erase("topic_parent")
+			after.properties["topic_parent"] = null
+		if preserve_contents and removed.has(after.references.get("container", "")):
+			var owner: String = after.references.container
+			while removed.has(owner):
+				owner = str(_records[owner].references.get("container", ""))
+			if owner.is_empty():
+				after.references.erase("container")
+				after.properties["container"] = null
+			else:
+				after.references.container = owner
+		if after.type == "venn_region":
+			var members := PackedStringArray()
+			for identifier in after.properties.get("member_ids", PackedStringArray()):
+				if not removed.has(identifier):
+					members.append(identifier)
+			if members.size() < 2:
+				changes.append({"before": before, "after": null})
+				continue
+			after.properties.member_ids = members
+		if before != after:
+			changes.append({"before": before, "after": after})
+	return apply_transaction(changes)
+
+func find_text(query: String) -> PackedStringArray:
+	var found := PackedStringArray()
+	if query.is_empty():
+		return found
+	for value in _document.objects:
+		if str(value.properties.get("text", "")).findn(query) >= 0:
+			found.append(value.id)
+	return found
+
+func object_counts() -> Vector2i:
+	var counts := Vector2i.ZERO
+	for value in _document.objects:
+		if Codec.ENTITY_TYPES.has(value.type):
+			counts.x += 1
+		elif value.type in ["line_edge", "venn_region"]:
+			counts.y += 1
+	return counts

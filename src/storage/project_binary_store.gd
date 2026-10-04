@@ -53,7 +53,17 @@ static func save(path: String, snapshot: Dictionary, camera: Dictionary,
 	for identifier in prepared.assets:
 		if not error.is_empty():
 			break
-		error = _write_block(file, blocks, "asset/" + identifier, prepared.assets[identifier], "raw", MAX_BLOB)
+		var value: Variant = prepared.assets[identifier]
+		if value is Blob:
+			var result: Dictionary = value.read()
+			if not result.ok:
+				error = result.error
+				break
+			value = result.data
+		if not value is PackedByteArray or Blob.digest(value) != identifier:
+			error = "资产内容与 ID 不一致"
+			break
+		error = _write_block(file, blocks, "asset/" + identifier, value, "raw", MAX_BLOB)
 	for name in preserved:
 		if not error.is_empty():
 			break

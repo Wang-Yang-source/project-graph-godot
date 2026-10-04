@@ -20,6 +20,12 @@ static func from_snapshot(snapshot: Dictionary, camera: Dictionary) -> Dictionar
 		var asset_refs := {}
 		for name in source.properties:
 			var value: Variant = source.properties[name]
+			if value is Blob and str(source.get("type", "")) == "legacy_asset" and name == "image_bytes":
+				var identifier: String = value.content_id()
+				if not identifier.is_empty():
+					assets[identifier] = value
+					asset_refs["image_bytes"] = identifier
+					continue
 			if value is Blob:
 				var loaded: Dictionary = value.read()
 				if not loaded.ok:

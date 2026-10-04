@@ -2,6 +2,7 @@ extends Node
 ## Short-lived scene-tree job: parsing owns no live nodes; construction stays on main.
 signal completed(ok: bool)
 const Plan = preload("res://src/project_load_plan.gd")
+const DocumentCodec = preload("res://src/storage/project_document.gd")
 const Reveal = preload("res://src/load_branch_reveal.gdshader")
 const FRAME_BUDGET_USEC := 12000
 const MAX_BATCH := 96
@@ -19,6 +20,12 @@ class ParseJob extends RefCounted:
 		if not assets.ok:
 			result = assets
 			return
+		var checked := DocumentCodec.from_snapshot(loaded.graph, loaded.graph.get("camera", {}))
+		if not checked.ok:
+			result = checked
+			return
+		loaded["validated_document"] = checked.document
+		loaded["validated_assets"] = checked.assets
 		var plan := Plan.build(loaded.graph, viewport_size, default_zoom)
 		if not plan.has("ordered"):
 			return

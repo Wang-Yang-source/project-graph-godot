@@ -158,7 +158,10 @@ func _capture_snapshot() -> Dictionary:
 
 
 func _restore_snapshot(snapshot: Dictionary) -> void:
-	await StageObjectRegistry.restore(target_root, snapshot)
+	if target_root.has_method("restore_document_snapshot"):
+		await target_root.call("restore_document_snapshot", snapshot)
+	else:
+		await StageObjectRegistry.restore(target_root, snapshot)
 
 
 func _wait_for_physics_settle() -> void:
