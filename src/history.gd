@@ -55,6 +55,9 @@ func _finish_commit() -> void:
 	var repulsion := target_root.get_node_or_null("NodeRepulsion")
 	if repulsion != null:
 		repulsion.call("stop_motion")
+	var session := target_root.get_node_or_null("PhysicsSession")
+	if session != null:
+		session.end()
 	# 投掷与避让属于同一次事务；提交前停止剩余惯性，避免记录后继续漂移。
 	for child in target_root.get_children():
 		if child is Entity and not child.drag_controlled:

@@ -55,6 +55,9 @@ var _mouse_resize_ids := PackedStringArray()
 
 
 func _ready() -> void:
+	var physics_session := preload("res://src/stage/physics_session.gd").new()
+	physics_session.name = "PhysicsSession"
+	add_child(physics_session)
 	var text_detail := preload("res://src/stage/text_detail.gd").new()
 	text_detail.name = "TextDetail"
 	add_child(text_detail)
@@ -582,6 +585,10 @@ func materialize_document_ids(identifiers: PackedStringArray) -> void:
 	group_overview.invalidate()
 
 func restore_document_snapshot(snapshot_data: Dictionary) -> void:
+	finish_interaction()
+	var session := get_node_or_null("PhysicsSession")
+	if session != null:
+		session.end()
 	var previous: Dictionary = document_model.native_document()
 	var wanted := _live_document_ids()
 	var prepared: Dictionary = document_model.replace_snapshot(snapshot_data)
@@ -653,6 +660,7 @@ func start_initial_load(path: String) -> Node:
 		return null
 	finish_interaction()
 	finish_text_editing()
+	$PhysicsSession.end()
 	is_loading = true
 	loading_file_path = path
 	history._busy = true

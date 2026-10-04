@@ -43,6 +43,10 @@ var drag_controlled := false:
 		freeze = false
 		if value:
 			sleeping = false
+			if is_inside_tree():
+				var session := get_parent().get_node_or_null("PhysicsSession")
+				if session != null:
+					session.begin([self])
 var drag_offset: Vector2 = Vector2.ZERO
 var is_throwing := false:
 	set(value):
@@ -71,7 +75,7 @@ func _ready() -> void:
 	collision_layer = 1
 	collision_mask = 1
 	freeze_mode = FREEZE_MODE_KINEMATIC
-	freeze = false
+	freeze = get_parent().get_node_or_null("PhysicsSession") != null
 	gravity_scale = 0.0
 	lock_rotation = true
 	linear_damp_mode = DAMP_MODE_REPLACE
@@ -336,6 +340,10 @@ func _pointer_velocity() -> Vector2:
 func _start_throw(velocity: Vector2) -> void:
 	is_throwing = not velocity.is_zero_approx()
 	if is_throwing:
+		freeze = false
+		var session := get_parent().get_node_or_null("PhysicsSession")
+		if session != null:
+			session.begin([self])
 		_saved_damping = linear_damp
 		linear_damp = throw_damping
 	linear_velocity = velocity
