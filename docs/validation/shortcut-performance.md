@@ -34,6 +34,10 @@ load("res://tests/performance_release_export.gd").build("/tmp/pg-shortcuts-befor
 
 拖动开始报告目标是否处于 overview 模式、被 overview 隐藏的实体数、物理会话成员数，并记录采样期间物理会话成员峰值。用于区分展开内容和折叠预览；默认倍率不变，测量折叠场景时显式设置 `--zoom=0.05` 或 `--zoom=0.1`，再加 `--require-overview`，若目标未折叠则失败。活动 overview 的真实输入仅选择对应 summary/title，避免点击被渲染层隐藏的原生 Label；不能仅按肉眼猜测折叠状态。
 
+`press_input_ms` 记录按下事件的 parse/flush 同步耗时；直接处理器入口另记 `direct_press_handler_ms`。保留原有不投掷的测试收尾：先同步调用 `finish_drag(false)`，其耗时记作 `release_finalize_ms`，随后释放事件 parse/flush 记作 `release_input_ms`，两项独立同步调用之和为 `release_callback_total_ms`。`release_input_after_manual_finish=true` 明确说明实际拖动先已结束，不能仅用随后的空释放事件耗时证明正常释放响应。记录历史事务在收尾前、手动结束后和输入释放后的活动状态；这些字段均不含异步物理稳定等待，未把惯性持续时间算成输入回调开销，也未新增等待或改变历史取消流程。新增计时已通过解析检查，尚待主任务下一次正常测量取得数据；正常投掷释放和历史最终提交仍须单独验收。
+
+可选 `--real-input --measure-release` 使用正常释放事件，不提前手动结束拖动。记录真实释放 parse/flush 后，再观察 1 秒 release 阶段的帧 median/P95/P99/峰值，捕捉惯性、碰撞和异步历史提交尖峰；记录窗口结束时历史事务是否仍活动、物理会话成员数和目标拖动状态。release 的同步事件耗时与这一阶段的帧耗时分别报告，窗口中事务仍活动不自动判为失败；有限观察不能证明后续全部稳定或释放完毕。该选项不影响默认旧收尾，尚待主任务最终测量验证。
+
 完整 Main 使用原有生产脚本，避免在节点已 ready 后替换脚本破坏状态；此路径的 `callback_timings_available=false`、预览捕获计数为 -1，表示未采集。裸 Stage 继续使用原有探针并报告捕获完成次数，捕获 GPU 为零仍表示缺少有效计时。父子回调耗时是 inclusive，不得重复相加。未把约每秒更新的 `Performance.TIME_PROCESS` / `TIME_PHYSICS_PROCESS` 当作逐帧 CPU 时间。
 
 默认拖动沿用旧驱动：输入事件移动指针，直接调用对象处理器开始拖动。可加 `--real-input`，只通过正常输入事件开始拖动；这条路径若未实际移动目标则基准失败，不会回退为直接处理器调用。两种入口必须分开标记，不能混合比较。画面命中和实际跟手仍需用户验收。

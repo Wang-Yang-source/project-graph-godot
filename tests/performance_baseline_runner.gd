@@ -156,12 +156,17 @@ func _run() -> void:
 	press.global_position = press.position
 	press.button_index = MOUSE_BUTTON_LEFT
 	press.pressed = true
+	var press_input_started: int = Time.get_ticks_usec()
 	Input.parse_input_event(press)
 	Input.flush_buffered_events()
+	report["press_input_ms"] = (Time.get_ticks_usec() - press_input_started) / 1000.0
+	report["press_history_transaction_active"] = stage.history.is_transaction_active()
 	if not real_input:
 		var local_press := press.duplicate() as InputEventMouseButton
 		local_press.position = stage.get_canvas_transform() * origin
+		var direct_press_started: int = Time.get_ticks_usec()
 		subject._on_input_event(stage.get_viewport(), local_press, 0)
+		report["direct_press_handler_ms"] = (Time.get_ticks_usec() - direct_press_started) / 1000.0
 	await get_tree().physics_frame
 	await process_frame
 	await create_timer(.2).timeout
@@ -191,10 +196,35 @@ func _run() -> void:
 		stage.get_node("PhysicsSession").set_physics_process(false)
 	await _measure("drag", origin)
 	var moved := subject.global_position.distance_to(original_position)
-	subject.finish_drag(false)
+	report["release_history_transaction_active_before"] = stage.history.is_transaction_active()
+	var normal_release: bool = real_input and OS.get_cmdline_user_args().has("--measure-release")
+	var release_finalize_started: int = Time.get_ticks_usec()
+	if not normal_release:
+		subject.finish_drag(false)
+	report["release_finalize_ms"] = (Time.get_ticks_usec() - release_finalize_started) / 1000.0
+	report["release_history_transaction_active_after_finalize"] = stage.history.is_transaction_active()
+	report["release_physics_session_members_after_finalize"] = _physics_session_members()
 	press.pressed = false
+	if normal_release:
+		press.position = root.get_final_transform() * root.get_mouse_position()
+		press.global_position = press.position
+	var release_input_started: int = Time.get_ticks_usec()
 	Input.parse_input_event(press)
 	Input.flush_buffered_events()
+	report["release_input_ms"] = (Time.get_ticks_usec() - release_input_started) / 1000.0
+	report["release_input_after_manual_finish"] = not normal_release
+	report["release_callback_total_ms"] = float(report.release_finalize_ms) + float(report.release_input_ms)
+	report["release_history_transaction_active_after_input"] = stage.history.is_transaction_active()
+	if normal_release:
+		var drag_sample_seconds: float = sample_seconds
+		sample_seconds = 1.0
+		await _measure("release")
+		sample_seconds = drag_sample_seconds
+		report["release_history_transaction_active_after_window"] = stage.history.is_transaction_active()
+		report["release_physics_session_members_after_window"] = _physics_session_members()
+		report["release_subject_dragging_after_window"] = subject.is_dragging
+		if subject.is_dragging:
+			failures.append("Normal release must finish the requested drag")
 	report["movement"] = moved
 	report["file_unchanged"] = FileAccess.get_sha256(path) == original_hash and FileAccess.get_sha256(source_path) == source_hash
 	stage.history.cancel_transaction()
@@ -324,7 +354,7 @@ func _measure(phase: String, origin := Vector2.ZERO) -> void:
 	for metric in samples:
 		var values: Array = samples[metric]
 		values.sort()
-		result[metric] = {"median": values[values.size()/2], "p95": values[mini(int(values.size() * .95), values.size()-1)], "p99": values[mini(int(values.size() * .99), values.size()-1)]}
+		result[metric] = {"median": values[values.size()/2], "p95": values[mini(int(values.size() * .95), values.size()-1)], "p99": values[mini(int(values.size() * .99), values.size()-1)], "max": values[values.size()-1]}
 	result["callback_cpu_mean_ms_per_frame"] = {}
 	for name in probes:
 		var totals: Dictionary = probes[name].perf_totals
