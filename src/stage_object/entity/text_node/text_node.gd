@@ -476,10 +476,10 @@ static func _make_canvas_font(original: Font) -> Font:
 		return variation
 	if original is FontFile:
 		var scalable := original.duplicate() as FontFile
-		# Fixed raster cache survives navigation. Mipmaps retain readable minification.
-		# Generating large MSDFs for every CJK glyph stalls cold document loads.
-		scalable.multichannel_signed_distance_field = false
-		scalable.oversampling = 2.0
+		# Share MSDF glyphs across zoom levels; keep label and editor geometry identical.
+		scalable.multichannel_signed_distance_field = true
+		scalable.msdf_pixel_range = 8
+		scalable.msdf_size = 48
 		scalable.generate_mipmaps = true
 		return scalable
 	return original

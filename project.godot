@@ -31,6 +31,7 @@ enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
 
 [gui]
 
+theme/default_font_multichannel_signed_distance_field=true
 theme/custom_font="res://assets/fonts/PingFang-SC-Regular.ttf"
 
 [input]
@@ -376,3 +377,7 @@ renderer/rendering_method.mobile="gl_compatibility"
 textures/vram_compression/import_etc2_astc=true
 environment/defaults/default_clear_color=Color(0, 0, 0, 0)
 viewport/transparent_background=true
+
+[internationalization]
+
+rendering/text_driver="advanced"

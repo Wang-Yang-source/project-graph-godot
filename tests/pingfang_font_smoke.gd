@@ -51,6 +51,9 @@ func _run() -> void:
 	check(node.text_edit.get_caret_column() == node.text.length(), "Caret starts at text end")
 	var font := node.label.get_theme_font("font")
 	check(font.get_font_name() == "PingFang SC", "Canvas uses PingFang")
+	check(uses_msdf(font), "Canvas font uses MSDF for zoom")
+	check(TextServerManager.get_primary_interface() is TextServerAdvanced, "Advanced text server is active")
+	check(uses_msdf(app.theme.default_font), "UI font uses MSDF")
 	check(node.text_edit.get_theme_font("font") == font, "Editor shares canvas font")
 	check(app.theme.default_font.get_font_name() == "PingFang SC", "UI uses PingFang")
 	var bundled := FontFile.new()
@@ -71,3 +74,9 @@ func _run() -> void:
 	await process_frame
 	print("PINGFANG_FONT: " + ("PASS" if failures.is_empty() else str(failures)))
 	quit(0 if failures.is_empty() else 1)
+
+
+func uses_msdf(font: Font) -> bool:
+	while font is FontVariation:
+		font = font.base_font
+	return font is FontFile and font.multichannel_signed_distance_field
