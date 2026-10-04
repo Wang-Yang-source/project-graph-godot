@@ -249,7 +249,8 @@ static func _whole(value: Variant) -> bool:
 
 
 static func _replace_file(temporary: String, path: String) -> Dictionary:
-	# Preserve the last file until replacement succeeds; no power-loss claim.
+	# Keep the original only during replacement, then remove the rollback file.
+	# This does not guarantee recovery after power loss.
 	var backup := path + ".previous"
 	var had_previous := FileAccess.file_exists(path)
 	if had_previous:
@@ -270,4 +271,9 @@ static func _replace_file(temporary: String, path: String) -> Dictionary:
 				return Document.failure("替换失败；原文件仍在 " + backup + "，新文件在 " + temporary)
 		DirAccess.remove_absolute(temporary)
 		return Document.failure("无法替换项目文件: " + error_string(error))
+	if had_previous:
+		var removed := DirAccess.remove_absolute(backup)
+		if removed != OK:
+			# The new document is already installed; do not report a failed save.
+			push_warning("项目已保存，但无法清理临时恢复副本: " + backup + ": " + error_string(removed))
 	return {"ok": true}

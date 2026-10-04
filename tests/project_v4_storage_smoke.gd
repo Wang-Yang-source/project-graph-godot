@@ -59,14 +59,14 @@ func _run() -> void:
 		check(loaded.preserved_entries["legacy/original.bin"] is Blob, "Legacy payload stays lazy")
 		var content: Dictionary = loaded.preserved_entries["legacy/original.bin"].read()
 		check(content.ok and content.data == legacy["legacy/original.bin"], "Lazy payload is byte-identical")
-		var old_hash := FileAccess.get_sha256(path)
 		check(ProjectFile.save(path, graph, {}, loaded.metadata.created_at, loaded.preserved_entries).ok, "Same-path save copies lazy payload before replacing its source")
-		check(FileAccess.get_sha256(path + ".previous") == old_hash, "Previous valid document is retained")
+		check(not FileAccess.file_exists(path + ".previous"), "Successful saves leave no rollback file")
 		var again := ProjectFile.load(path)
 		if again.ok:
 			check(again.preserved_entries["legacy/original.bin"].read().data == legacy["legacy/original.bin"], "Payload offsets are rebased after saving")
 		else:
 			check(false, "Replacement remains readable")
+	_test_replacement_rollback(path)
 	_test_assets()
 	_test_legacy_json(graph)
 	_test_rejection(graph, path)
@@ -157,3 +157,12 @@ func _test_rejection(graph: Dictionary, valid_path: String) -> void:
 	var native := {"schema": 1, "camera": {}, "objects": []}
 	native["unsafe"] = resource
 	check(not Document.safe_value(native), "Objects cannot enter the native document codec")
+
+
+func _test_replacement_rollback(path: String) -> void:
+	var before := FileAccess.get_sha256(path)
+	var missing := temporary("missing-replacement")
+	var result := Store._replace_file(missing, path)
+	check(not result.ok, "Failed replacement reports failure")
+	check(FileAccess.get_sha256(path) == before, "Failed replacement restores original document")
+	check(not FileAccess.file_exists(path + ".previous"), "Successful rollback leaves no recovery file")
