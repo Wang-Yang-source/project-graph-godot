@@ -70,7 +70,7 @@ var _exiting := false
 
 
 func _ready() -> void:
-	# Layout, camera and edge geometry run first. Never affect physics visibility.
+	# Layout, camera and edge geometry run first; membership then gates hidden bodies.
 	process_priority = 50
 
 
@@ -409,6 +409,8 @@ func _refresh_membership() -> void:
 				if item.has("layer"):
 					item.node.visibility_layer = 0
 		object.input_pickable = not _hidden.has(identifier) and bool(_suppressed[identifier].pickable)
+		if object is Entity and object.has_method("set_overview_physics_hidden"):
+			object.set_overview_physics_hidden(_hidden.has(identifier))
 	_preview_nodes.clear()
 	_preview_roots.clear()
 	for identifier in _active:
@@ -833,6 +835,8 @@ func _restore(key: int) -> void:
 			item.node.mouse_filter = item.mouse_filter
 	if is_instance_valid(state.object):
 		state.object.input_pickable = state.pickable
+		if state.object is Entity and state.object.has_method("set_overview_physics_hidden"):
+			state.object.set_overview_physics_hidden(false)
 	if is_instance_valid(state.object) and state.object.is_inside_tree() and not _exiting:
 		_refresh_restored_canvas(state.object)
 		if state.object is LineEdge:
@@ -1082,6 +1086,8 @@ func register_loading_object(object: StageObject) -> void:
 		return
 	var key := object.get_instance_id()
 	_hidden[key] = true
+	if object is Entity and object.has_method("set_overview_physics_hidden"):
+		object.set_overview_physics_hidden(true)
 	if _suppressed.has(key):
 		return
 	var items: Array[Dictionary] = []
