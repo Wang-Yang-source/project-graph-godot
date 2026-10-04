@@ -35,6 +35,7 @@ var document_revision := 0
 var _dirty_revision := -1
 var _cached_dirty := false
 var _editing_objects: Dictionary = {}
+var membership_revision := 0
 var _counts_revision := -1
 var _counts := Vector2i.ZERO
 var _last_view_key: Array = []
@@ -422,6 +423,10 @@ func is_dirty() -> bool:
 		if object is TextNode and object._editing and object.text_edit.text != object.text:
 			return true
 	if _dirty_revision != document_revision:
+		# Polling the UI must not serialize a live physical transaction. Keep the
+		# comparison revision pending so cancel/undo can restore a clean state.
+		if history.is_transaction_active():
+			return true
 		document_snapshot()
 		_cached_dirty = not _document_sync_error.is_empty() or document_model.native_document() != _saved_document
 		_dirty_revision = document_revision
@@ -613,6 +618,7 @@ func restore_document_snapshot(snapshot_data: Dictionary) -> void:
 	document_revision += 1
 	layout_revision += 1
 	_document_model_revision = document_revision
+	membership_revision += 1
 	group_overview.invalidate()
 
 func save_to_file(path: String) -> bool:
@@ -692,6 +698,7 @@ func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison:
 			move_child(by_id[identifier], slot)
 		slot += 1
 	_document_views = _live_document_ids()
+	membership_revision += 1
 	snapshot = document_snapshot()
 	_preserved_entries = result.get("preserved_entries", {})
 	history.clear(snapshot)
@@ -758,6 +765,7 @@ func _on_stage_child_changed(child: Node) -> void:
 		if not _document_views.has(child.id):
 			_document_views.append(child.id)
 		_editing_objects.erase(child.get_instance_id())
+		membership_revision += 1
 		layout_revision += 1
 		document_revision += 1
 
@@ -783,10 +791,28 @@ func set_editor_active(object: StageObject, active: bool) -> void:
 
 
 func object_counts() -> Vector2i:
-	if _counts_revision != layout_revision:
-		document_snapshot()
-		_counts = document_model.object_counts()
-		_counts_revision = layout_revision
+	if _counts_revision == membership_revision:
+		return _counts
+	# Merge membership only. Inactive records are still document objects, while
+	# disappeared tracked views and newly created live objects affect the count.
+	var types := {}
+	for identifier in document_model.ids():
+		var record: Dictionary = document_model.record(identifier)
+		types[identifier] = record.type
+	var live := {}
+	for object in stage_objects():
+		live[object.id] = true
+		types[object.id] = StageObjectRegistry._type_for(object)
+	for identifier in _document_views:
+		if not live.has(identifier):
+			types.erase(identifier)
+	_counts = Vector2i.ZERO
+	for type in types.values():
+		if type in ["entity", "text_node", "pen_stroke", "legacy_asset"]:
+			_counts.x += 1
+		elif type in ["association", "line_edge", "venn_region"]:
+			_counts.y += 1
+	_counts_revision = membership_revision
 	return _counts
 
 

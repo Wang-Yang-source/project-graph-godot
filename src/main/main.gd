@@ -1179,7 +1179,7 @@ func _process(delta: float) -> void:
 		if _window_ready.has(window_name) and _window_ready[window_name].visible:
 			needs_graph = true
 			break
-	if stage.is_loading or not needs_graph or _last_graph_revision == stage.document_revision:
+	if stage.is_loading or stage.history.is_transaction_active() or not needs_graph or _last_graph_revision == stage.document_revision:
 		return
 	_last_graph_revision = stage.document_revision
 	var graph := JSON.stringify(StageObjectRegistry.capture(stage))
