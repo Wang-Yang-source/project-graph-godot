@@ -106,7 +106,7 @@ func _ready() -> void:
 	_normal_edit_position = text_edit.position
 	# 共享固定字形缓存；控件过滤必须实际使用缩小采样的 mipmap。
 	if _canvas_font == null:
-		_canvas_font = _make_canvas_font(preload("res://assets/fonts/PingFang-SC-Regular.ttf"))
+		_canvas_font = _make_centered_canvas_font(preload("res://assets/fonts/PingFang-SC-Regular.ttf"))
 	var display_font: Font = get_meta("prepared_canvas_font", _canvas_font)
 	remove_meta("prepared_canvas_font")
 	label.add_theme_font_override("font", display_font)
@@ -466,6 +466,14 @@ func get_visual_outline() -> PackedVector2Array:
 	var original := Corners.source(control.get_theme_stylebox(key))
 	var radius := float(original.corner_radius_top_left) if original != null else 0.0
 	return Corners.outline(get_visual_rect(), radius)
+
+
+static func _make_centered_canvas_font(original: Font) -> FontVariation:
+	var bold := FontVariation.new()
+	bold.base_font = _make_canvas_font(original)
+	# Synthetic emboldening creates overlapping contours and holes in MSDF glyphs.
+	bold.variation_embolden = 0.0
+	return bold
 
 
 static func _make_canvas_font(original: Font) -> Font:

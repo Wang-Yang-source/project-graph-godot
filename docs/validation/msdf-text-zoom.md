@@ -11,3 +11,17 @@
 手动验证（尚未执行）：退出旧实例，从应用菜单打开新版，在节点输入“文字缩放清晰 Test01”，分别缩放到 100%、200%、400%，再双击编辑并给连线添加文字。放大时字缘应保持清晰，进入编辑后字形和起点应一致。缩回 50% 并切换深浅主题，应没有字形缺失。失败重点检查是否仍运行旧版本、字体是否成功重导入、局部字体覆盖是否关闭 MSDF；同时观察中文大文档首次打开是否卡顿。
 
 参考：[Godot FontFile](https://docs.godotengine.org/en/stable/classes/class_fontfile.html)、[ProjectSettings](https://docs.godotengine.org/en/stable/classes/class_projectsettings.html)。
+
+## 模拟加粗导致字形孔洞
+
+用户提供的 Waya 截图已通过原生 Label 渲染复现：同一苹方字体的 MSDF 配合 `FontVariation.variation_embolden=0.45` 时，W 和“体”的笔画出现孔洞；不加粗的 MSDF 字形正常。移除这层模拟加粗，保留字体家族、Advanced 服务、MSDF 和编辑框共享字体。字重恢复字体原始 Regular，比之前略细。
+
+新增 `msdf_glyph_integrity_smoke.gd`，通过 SubViewport 与 Label 实际渲染共享画布字体，检查没有闭合字腔的 W。使用 Xvfb、Compatibility 与 Mesa llvmpipe；修改前在 100%、200%、400% 分别发现 30、115、470 个孔洞背景像素，修改后均为 0，且有足够的前景像素，防止未渲染的空图误判通过。`pingfang_font_smoke` 同样在 Xvfb 下通过，日志没有脚本或 IME 错误。没有启动 Godot Editor 或操作真实桌面窗口。
+
+检查命令（通过 Godot MCP 执行，需符合仓库授权规则）：
+
+```sh
+xvfb-run -a godot --path . --rendering-method gl_compatibility --script res://tests/msdf_glyph_integrity_smoke.gd
+```
+
+手动验收仍未执行：退出旧实例后重开，在节点和连线标题输入“Waya! 字体”，放大到 200%、400%，切换深浅背景并进入编辑。W 的三个尖角及“体”的笔画交接应完整，没有背景色孔洞，文字仍使用 MSDF。失败重点检查旧实例或旧系统安装、局部模拟加粗是否仍开启，以及实际 GPU 后端差异。
