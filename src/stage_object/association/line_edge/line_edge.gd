@@ -25,6 +25,7 @@ static var _stroke_textures: Dictionary = {}
 		if source == value:
 			return
 		source = value
+		notify_topology_change()
 		_watch_endpoints()
 		_queue_refresh()
 		notify_persistent_change()
@@ -34,6 +35,7 @@ static var _stroke_textures: Dictionary = {}
 		if target == value:
 			return
 		target = value
+		notify_topology_change()
 		_watch_endpoints()
 		_queue_refresh()
 		notify_persistent_change()

@@ -10,6 +10,8 @@ extends RigidBody2D
 signal geometry_changed
 
 var geometry_version := 0
+# Translation changes world geometry but preserves reusable local shapes.
+var shape_version := 0
 var _known_transform := Transform2D.IDENTITY
 var _known_local_transform := Transform2D.IDENTITY
 
@@ -49,8 +51,9 @@ func _notification(what: int) -> void:
 			_known_local_transform = transform
 			notify_persistent_change()
 		if global_transform != _known_transform:
+			var basis_changed := global_transform.x != _known_transform.x or global_transform.y != _known_transform.y
 			_known_transform = global_transform
-			invalidate_geometry()
+			invalidate_geometry(basis_changed)
 
 
 # RigidBody2D's native force integration can update the pose without sending
@@ -65,8 +68,10 @@ func _sync_physics_transform() -> void:
 	_notification(NOTIFICATION_TRANSFORM_CHANGED)
 
 
-func invalidate_geometry() -> void:
+func invalidate_geometry(local_shape_changed: bool = true) -> void:
 	geometry_version += 1
+	if local_shape_changed:
+		shape_version += 1
 	geometry_changed.emit()
 	var stage := get_parent()
 	if stage != null and stage.has_method("mark_geometry_changed"):
@@ -104,3 +109,9 @@ func notify_persistent_change() -> void:
 	var stage := get_parent()
 	if stage != null and stage.has_method("mark_document_changed"):
 		stage.call("mark_document_changed")
+
+
+func notify_topology_change() -> void:
+	var stage := get_parent()
+	if stage != null and stage.has_method("mark_topology_changed"):
+		stage.call("mark_topology_changed")

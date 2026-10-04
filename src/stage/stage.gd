@@ -36,6 +36,7 @@ var _dirty_revision := -1
 var _cached_dirty := false
 var _editing_objects: Dictionary = {}
 var membership_revision := 0
+var topology_revision := 0
 var _counts_revision := -1
 var _counts := Vector2i.ZERO
 var _last_view_key: Array = []
@@ -535,6 +536,7 @@ func release_document_views(identifiers: PackedStringArray) -> void:
 			if index >= 0:
 				_document_views.remove_at(index)
 	_document_sync_depth -= 1
+	topology_revision += 1
 	group_overview.invalidate()
 
 
@@ -585,6 +587,7 @@ func materialize_document_ids(identifiers: PackedStringArray) -> void:
 		reference.object.set(reference.property, by_id.get(reference.reference_id))
 	StageObjectRegistry.resolve_object_references(self, by_id)
 	_document_sync_depth -= 1
+	topology_revision += 1
 	_document_views = _live_document_ids()
 	$EntityLayerMover.reset_tracking()
 	group_overview.invalidate()
@@ -614,6 +617,7 @@ func restore_document_snapshot(snapshot_data: Dictionary) -> void:
 	_document_sync_depth += 1
 	await StageObjectRegistry.restore(self, {"objects": visible_records})
 	_document_sync_depth -= 1
+	topology_revision += 1
 	_document_views = _live_document_ids()
 	document_revision += 1
 	layout_revision += 1
@@ -677,6 +681,7 @@ func start_initial_load(path: String) -> Node:
 
 
 func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison: Dictionary) -> void:
+	topology_revision += 1
 	var prepared: Dictionary
 	if result.has("validated_document"):
 		prepared = document_model.replace_document(result.validated_document, result.validated_assets)
@@ -766,6 +771,7 @@ func _on_stage_child_changed(child: Node) -> void:
 			_document_views.append(child.id)
 		_editing_objects.erase(child.get_instance_id())
 		membership_revision += 1
+		topology_revision += 1
 		layout_revision += 1
 		document_revision += 1
 
@@ -775,6 +781,13 @@ func mark_geometry_changed(object: StageObject) -> void:
 		return
 	if object is Entity:
 		layout_revision += 1
+
+
+func mark_topology_changed() -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
+	topology_revision += 1
+	layout_revision += 1
 
 
 func mark_document_changed() -> void:

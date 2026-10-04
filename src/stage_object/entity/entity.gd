@@ -7,6 +7,7 @@ extends StageObject
 		if container == value:
 			return
 		container = value
+		notify_topology_change()
 		if is_inside_tree():
 			_refresh_container_collisions.call_deferred()
 			for child in get_parent().get_children():
