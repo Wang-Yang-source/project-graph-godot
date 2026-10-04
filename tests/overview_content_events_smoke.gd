@@ -102,6 +102,25 @@ func _run() -> void:
 	members[1].label.add_theme_color_override("font_color", Color.RED)
 	await settle()
 	check(overview._native_previews[group_id].image != image, "Direct local label theme changes invalidate copied pixels")
+	var mutable_style := overview.Corners.source(members[1].label.get_theme_stylebox("normal")).duplicate() as StyleBoxFlat
+	mutable_style.bg_color = Color.BLUE
+	members[1].label.add_theme_stylebox_override("normal", mutable_style)
+	await settle()
+	image = overview._native_previews[group_id].image
+	var style_generation: int = overview._native_content_generations.get(members[1].get_instance_id(), 0)
+	mutable_style.bg_color = Color.MAGENTA
+	await settle()
+	check(members[1].label.get_theme_stylebox("normal") == mutable_style, "The source StyleBox retains its identity during an in-place edit")
+	check(overview._native_content_generations.get(members[1].get_instance_id(), 0) > style_generation, "In-place StyleBox changes publish local content events")
+	check(overview._native_previews[group_id].image != image, "In-place StyleBox mutation refreshes frozen preview pixels")
+	image = overview._native_previews[group_id].image
+	walks = overview._native_content_walks
+	checks = overview._native_content_member_checks
+	group.global_position += Vector2(3, 1)
+	for member in members:
+		member.global_position += Vector2(3, 1)
+	await settle()
+	check(overview._native_content_walks == walks and overview._native_content_member_checks == checks and overview._native_previews[group_id].image == image, "Common translation after a resource edit still performs zero full content/member walks")
 	image = overview._native_previews[group_id].image
 	group.global_position += Vector2(16, 0)
 	await settle()

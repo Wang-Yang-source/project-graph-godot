@@ -67,6 +67,7 @@ var _native_members := {}
 var _native_members_key: Array = []
 var _native_text_content_cache := {}
 var _native_content_objects := {}
+var _native_content_generations := {}
 var _native_object_roots := {}
 var _native_relative_poses := {}
 var _native_entity_counts := {}
@@ -335,6 +336,7 @@ func _sync_geometry_watchers() -> void:
 		_disconnect_geometry_watcher(data)
 		_geometry_watchers.erase(identifier)
 		_native_text_content_cache.erase(identifier)
+		_native_content_generations.erase(identifier)
 	_entity_topology_keys.clear()
 	for object in _objects:
 		var identifier: int = object.get_instance_id()
@@ -366,6 +368,8 @@ func _disconnect_geometry_watcher(data: Dictionary) -> void:
 func _queue_native_content(object: StageObject) -> void:
 	var identifier := object.get_instance_id()
 	_native_content_objects[identifier] = object
+	# Resource references are mutable: retain an immutable event stamp in keys.
+	_native_content_generations[identifier] = int(_native_content_generations.get(identifier, 0)) + 1
 	_native_text_content_cache.erase(identifier)
 
 func _queue_geometry(object: StageObject) -> void:
@@ -719,7 +723,8 @@ func _native_text_content(object: TextNode, control: Control) -> Array:
 	var identifier := object.get_instance_id()
 	# Persistent text/style setters invalidate local geometry. World translation
 	# leaves shape_version unchanged, so querying fonts/styles is unnecessary.
-	var key := [object.shape_version, get_parent()._applied_theme_light, object._container_active,
+	var generation := int(_native_content_generations.get(identifier, 0))
+	var key := [object.shape_version, generation, get_parent()._applied_theme_light, object._container_active,
 		control.get_transform(), control.size, label.get_transform(), label.size]
 	var cached: Dictionary = _native_text_content_cache.get(identifier, {})
 	if cached.get("key", []) == key:
@@ -727,7 +732,7 @@ func _native_text_content(object: TextNode, control: Control) -> Array:
 	var content := [object.shape_version, control.get_theme_stylebox("panel" if object._container_active else "normal"), object._container_active,
 		label.text, label.get_theme_font("font"), label.get_theme_font_size("font_size"),
 		label.get_theme_color("font_color"), label.get_theme_stylebox("normal"), label.horizontal_alignment,
-		label.vertical_alignment, label.autowrap_mode, label.clip_text, label.text_overrun_behavior]
+		label.vertical_alignment, label.autowrap_mode, label.clip_text, label.text_overrun_behavior, generation]
 	_native_text_content_cache[identifier] = {"key": key, "content": content}
 	return content
 
@@ -991,6 +996,7 @@ func _exit_tree() -> void:
 	_native_members_key.clear()
 	_native_text_content_cache.clear()
 	_native_content_objects.clear()
+	_native_content_generations.clear()
 	_native_object_roots.clear()
 	_native_relative_poses.clear()
 	_native_entity_counts.clear()
