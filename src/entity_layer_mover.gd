@@ -129,6 +129,10 @@ func cancel() -> void:
 
 
 func _process(_delta: float) -> void:
+	# Detached preview contents need their world poses only once before rendering.
+	var session := target_root.get_node_or_null("PhysicsSession")
+	if session != null and session.has_method("sync_group_followers"):
+		session.call("sync_group_followers")
 	refresh_layout()
 	if not is_visible_in_tree():
 		cancel()
@@ -236,6 +240,10 @@ func _drop() -> void:
 
 
 func _physics_process(_delta: float) -> void:
+	# Follow the authoritative root even when no geometry notification has arrived.
+	var session := target_root.get_node_or_null("PhysicsSession")
+	if session != null and session.has_method("sync_group_followers"):
+		session.call("sync_group_followers", true)
 	if target_root is Stage:
 		if _physics_revision == target_root.layout_revision:
 			return
@@ -255,7 +263,7 @@ func _physics_process(_delta: float) -> void:
 		var displacement := parent.global_position - old
 		if not displacement.is_zero_approx():
 			for child: Entity in _children_by_parent.get(parent, []):
-				if not child.drag_controlled and not child._release_pending:
+				if not child.drag_controlled and not child._release_pending and not is_instance_valid(child.get('_rigid_follow_owner')):
 					child.move_without_inertia(child.global_position + displacement)
 	for object in all:
 		_last_positions[object] = object.global_position

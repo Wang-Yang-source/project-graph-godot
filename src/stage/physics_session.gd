@@ -6,6 +6,9 @@ const LOOKAHEAD_SECONDS := 0.05
 const STABLE_FRAMES := 3
 var target_root: Node2D
 var _members := {}
+var _group_followers: Dictionary = {}
+var _follower_rids: Array[RID] = []
+var _group_topology_revision := -1
 var _stable := 0
 var active := false
 var _shape := RectangleShape2D.new()
@@ -17,8 +20,9 @@ func _ready() -> void:
 
 func begin(drivers: Array) -> void:
 	for body in drivers:
-		if body is Entity and is_instance_valid(body) and body.get_parent() == target_root:
+		if body is Entity and is_instance_valid(body) and body.get_parent() == target_root and not body._overview_physics_hidden and not is_instance_valid(body._rigid_follow_owner):
 			_members[body] = true
+			_register_group_followers(body)
 			body.freeze = false
 			body.sleeping = false
 	if _members.is_empty():
@@ -27,10 +31,50 @@ func begin(drivers: Array) -> void:
 	_stable = 0
 	set_physics_process(true)
 
+# Descendant ownership lasts through inertia and ends with the transaction's
+# physics session. Hidden bodies are outside the space; expanded followers stay
+# kinematic but never run independent integration or contact discovery.
+func _register_group_followers(driver: Entity) -> void:
+	for object in target_root.get_children():
+		var child := object as Entity
+		if child == null or child == driver or not child.is_inside_container(driver):
+			continue
+		if _group_followers.has(child) and child._rigid_follow_owner == driver:
+			continue
+		child.stop_throw()
+		child._rigid_follow_owner = driver
+		child.drag_controlled = false
+		child.freeze = true
+		child.sleeping = true
+		_group_followers[child] = child.global_position - driver.global_position
+		_members.erase(child)
+		if not _follower_rids.has(child.get_rid()):
+			_follower_rids.append(child.get_rid())
+
+func sync_group_followers(physics_only := false) -> void:
+	var check_containment: bool = not target_root is Stage or _group_topology_revision != target_root.topology_revision
+	for child in _group_followers.keys():
+		if not is_instance_valid(child) or child.is_queued_for_deletion():
+			_group_followers.erase(child)
+			continue
+		var driver: Entity = child._rigid_follow_owner
+		if not is_instance_valid(driver) or driver.is_queued_for_deletion() or (check_containment and not child.is_inside_container(driver)):
+			child._rigid_follow_owner = null
+			child.freeze = true
+			_group_followers.erase(child)
+			continue
+		# Collapsed descendants have no native contacts. Publish their poses once
+		# before render/layout rather than repeating work for catch-up steps.
+		if physics_only and child._overview_physics_hidden:
+			continue
+		child._set_group_follow_position(driver.global_position + _group_followers[child])
+	if target_root is Stage:
+		_group_topology_revision = target_root.topology_revision
+
 func _activate_contacts() -> void:
 	var space := target_root.get_world_2d().direct_space_state
 	var queue := _members.keys()
-	var excluded: Array[RID] = []
+	var excluded: Array[RID] = _follower_rids.duplicate()
 	for body in queue:
 		if is_instance_valid(body):
 			excluded.append(body.get_rid())
@@ -57,12 +101,16 @@ func _activate_contacts() -> void:
 				excluded.append(candidate.get_rid())
 			if not candidate is Entity or not is_instance_valid(candidate) or candidate.is_queued_for_deletion() or candidate.get_parent() != target_root:
 				continue
+			if candidate._overview_physics_hidden or is_instance_valid(candidate._rigid_follow_owner):
+				continue
 			if _members.has(candidate):
 				continue
 			# Enclosing frames are collision-exempt from their descendants.
 			if body.is_inside_container(candidate) or candidate.is_inside_container(body):
 				continue
 			_members[candidate] = true
+			_register_group_followers(candidate)
+			excluded.append_array(_follower_rids.filter(func(rid): return not excluded.has(rid)))
 			candidate.freeze = false
 			candidate.sleeping = false
 			queue.append(candidate)
@@ -71,8 +119,9 @@ func _activate_contacts() -> void:
 			queue.append(body)
 
 func _physics_process(_delta: float) -> void:
+	sync_group_followers(true)
 	for body in _members.keys():
-		if not is_instance_valid(body) or body.is_queued_for_deletion() or body.get_parent() != target_root:
+		if not is_instance_valid(body) or body.is_queued_for_deletion() or body.get_parent() != target_root or body._overview_physics_hidden or is_instance_valid(body._rigid_follow_owner):
 			_members.erase(body)
 	if _members.is_empty():
 		end()
@@ -88,6 +137,17 @@ func _physics_process(_delta: float) -> void:
 		end()
 
 func end() -> void:
+	sync_group_followers()
+	for child in _group_followers:
+		if is_instance_valid(child) and not child.is_queued_for_deletion():
+			child._rigid_follow_owner = null
+			child.drag_controlled = false
+			child.stop_throw()
+			child.freeze = true
+			child.sleeping = true
+	_group_followers.clear()
+	_follower_rids.clear()
+	_group_topology_revision = -1
 	for body in _members:
 		if is_instance_valid(body) and not body.is_queued_for_deletion():
 			body.stop_throw()

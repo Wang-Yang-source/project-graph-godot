@@ -34,6 +34,9 @@ var _collision_outline_transform := Transform2D.IDENTITY
 const THROW_SAMPLE_SECONDS := 0.08
 static var _native_material: PhysicsMaterial
 var _collision_ancestors: Array[Entity] = []
+# Presentation-only physics state; never serialized into the document.
+var _overview_physics_hidden := false
+var _rigid_follow_owner: Entity
 
 var is_dragging: bool = false:
 	set(value):
@@ -43,8 +46,8 @@ var is_dragging: bool = false:
 var drag_controlled := false:
 	set(value):
 		drag_controlled = value
-		# Keep contacts dynamic; only the physics callback drives the gesture.
-		freeze = false
+		# Only top-level gesture drivers integrate; descendants keep their offsets.
+		freeze = _overview_physics_hidden or is_instance_valid(_rigid_follow_owner)
 		if value:
 			sleeping = false
 			if is_inside_tree():
@@ -174,7 +177,37 @@ func _refresh_collision_outline() -> void:
 
 
 func _uses_native_physics() -> bool:
-	return true
+	return not _overview_physics_hidden
+
+
+func set_overview_physics_hidden(hidden: bool) -> void:
+	if _overview_physics_hidden == hidden:
+		return
+	_overview_physics_hidden = hidden
+	if not is_inside_tree():
+		return
+	if hidden:
+		stop_throw()
+		freeze = true
+		sleeping = true
+		_position_sync_pending = false
+		PhysicsServer2D.body_set_space(get_rid(), RID())
+	else:
+		_position_sync_pending = false
+		PhysicsServer2D.body_set_state(get_rid(), PhysicsServer2D.BODY_STATE_TRANSFORM, global_transform)
+		PhysicsServer2D.body_set_space(get_rid(), get_world_2d().space)
+		# Expanding restores native collision, while an in-flight group gesture
+		# continues owning the descendant until the whole session has settled.
+		freeze = is_instance_valid(_rigid_follow_owner) or not (drag_controlled or is_throwing)
+		sleeping = freeze
+
+
+func _set_group_follow_position(world_position: Vector2) -> void:
+	# A frozen/hidden follower never integrates a deferred position target.
+	# Clear it now so expansion cannot replay an old pre-drag position.
+	_position_sync_pending = false
+	if global_position != world_position:
+		global_position = world_position
 
 
 func _refresh_container_collisions() -> void:
@@ -234,13 +267,24 @@ func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> voi
 							_drag_origins[candidate] = candidate.global_position
 							_drag_followers[candidate] = true
 							break
+			# Explicitly selected nested objects are followers too. Every containment
+			# tree has one native driver, even with a multi-selection.
+			for object in _drag_origins:
+				var ancestor: Entity = object.container
+				var seen := {}
+				while is_instance_valid(ancestor) and not seen.has(ancestor):
+					seen[ancestor] = true
+					if _drag_origins.has(ancestor):
+						_drag_followers[object] = true
+						break
+					ancestor = ancestor.container
 			for object in _drag_origins:
 				object.stop_throw()
-				object.drag_controlled = true
+				object.drag_controlled = not _drag_followers.has(object)
 				object._drag_target = object.global_position
 				object.linear_velocity = Vector2.ZERO
 				object.angular_velocity = 0.0
-				object.sleeping = false
+				object.sleeping = _drag_followers.has(object)
 			linear_velocity = Vector2.ZERO
 			angular_velocity = 0.0
 			if stage != null:
@@ -277,8 +321,12 @@ func finish_drag(allow_throw := false, world_pointer := Vector2.INF) -> void:
 			object.drag_controlled = false
 			object._release_pending = false
 			# Descendants follow their parent after release; do not add a second throw.
-			object._release_velocity = Vector2.ZERO if _drag_followers.has(object) else velocity
-			object._start_throw(object._release_velocity)
+			if _drag_followers.has(object):
+				object.stop_throw()
+				object.freeze = true
+			else:
+				object._release_velocity = velocity
+				object._start_throw(velocity)
 	_drag_origins.clear()
 	_drag_followers.clear()
 	_drag_samples.clear()
@@ -311,7 +359,7 @@ func _update_drag_target(world_pointer := Vector2.INF) -> void:
 		return
 	var displacement: Vector2 = target_position - _drag_origin
 	for object in _drag_origins:
-		if is_instance_valid(object):
+		if is_instance_valid(object) and not _drag_followers.has(object):
 			object._drag_target = _drag_origins[object] + displacement
 			object.sleeping = false
 
@@ -323,7 +371,7 @@ func _integrate_forces(state: PhysicsDirectBodyState2D) -> void:
 		state.transform = pose
 		state.linear_velocity = Vector2.ZERO
 		_position_sync_pending = false
-	if drag_controlled:
+	if drag_controlled and not is_instance_valid(_rigid_follow_owner) and not _overview_physics_hidden:
 		# Upstream's velocity-following gesture, applied on the native physics clock.
 		# Bound the gain by the timestep so a slow frame cannot overshoot the target.
 		var gain := minf(20.0, 1.0 / maxf(state.step, 0.001))
@@ -366,7 +414,7 @@ func _pointer_velocity() -> Vector2:
 func _start_throw(velocity: Vector2) -> void:
 	is_throwing = not velocity.is_zero_approx()
 	if is_throwing:
-		freeze = false
+		freeze = _overview_physics_hidden or is_instance_valid(_rigid_follow_owner)
 		var session := get_parent().get_node_or_null("PhysicsSession")
 		if session != null:
 			session.begin([self])
@@ -419,11 +467,16 @@ func pause_drag_for_layer_move() -> void:
 	if not is_dragging:
 		return
 	is_dragging = false
+	var session := get_parent().get_node_or_null("PhysicsSession")
+	if session != null:
+		session.end()
 	for object in _drag_origins:
 		if is_instance_valid(object):
 			object.drag_controlled = false
 			object.stop_throw()
+			object.freeze = true
 	_drag_origins.clear()
+	_drag_followers.clear()
 	_drag_samples.clear()
 
 
