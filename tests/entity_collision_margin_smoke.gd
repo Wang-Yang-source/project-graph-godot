@@ -22,19 +22,19 @@ func _run() -> void:
 	check(outer != null, "Entity owns an invisible native collision frame")
 	if outer != null:
 		var frame: Rect2 = outer.global_transform * outer.shape.get_rect()
-		check(frame.size.is_equal_approx(visual.size + Vector2(24, 24)), "Collision frame adds twelve units per side")
+		check(frame.size.is_equal_approx(visual.size + Vector2(2, 2)), "Collision frame adds one unit per side")
 		check(a.collision_shape.disabled, "Only the outer frame participates in contacts")
-	var b: TextNode = stage.create_text_node("B", Vector2(visual.end.x + 8, 0), false)
+	var b: TextNode = stage.create_text_node("B", Vector2(visual.end.x + 0.5, 0), false)
 	b.fixed_width = 160
 	await frames(120)
 	var gap := b.aabb.position.x - a.aabb.end.x
-	check(gap > 20.0, "Visually separated nodes repel before their visible frames touch")
+	check(gap > 1.5, "Visually separated nodes repel before their visible frames touch")
 	check(a.aabb.size.is_equal_approx(visual.size), "Repulsion does not enlarge editor bounds")
 	a.text = "Changed width"
 	a.fixed_width = 240
 	await frames(8)
 	if outer != null:
-		check((outer.shape as RectangleShape2D).size.is_equal_approx(a.get_visual_rect().size + Vector2(24,24)), "Collision frame follows text resize")
+		check((outer.shape as RectangleShape2D).size.is_equal_approx(a.get_visual_rect().size + Vector2(2,2)), "Collision frame follows text resize")
 	var asset: Entity = load("res://src/stage_object/entity/legacy_asset/legacy_asset.tscn").instantiate()
 	var image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
 	image.fill(Color.WHITE)

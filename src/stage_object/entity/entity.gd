@@ -24,7 +24,7 @@ extends StageObject
 		throw_damping = value
 		notify_persistent_change()
 
-const COLLISION_MARGIN := 12.0
+const COLLISION_MARGIN := 1.0
 var _physics_margin: CollisionShape2D
 var _collision_margin_pending := false
 

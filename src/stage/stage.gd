@@ -311,6 +311,9 @@ func _refresh_selection_outlines() -> void:
 			continue
 		line.closed = true
 		line.modulate.a = 1.0
+		if object is Entity:
+			line.width = 1.0
+			line.texture = null
 		var rect: Rect2 = object.get_visual_rect() if object is TextNode else object.aabb
 		var points: PackedVector2Array = object.get_visual_outline() if object is TextNode else _rounded_selection_rect(rect, 6.0)
 		if object is TextNode and group_overview.is_active(object):
