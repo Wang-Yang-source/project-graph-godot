@@ -18,6 +18,7 @@ var _layout_inputs: Array = []
 var _layout_revision := -1
 var _physics_revision := -1
 var _topology_key: Array = []
+var _topology_revision := -1
 var _outer_first: Array[Entity] = []
 var _inner_first: Array[Entity] = []
 var _children_by_parent: Dictionary = {}
@@ -213,7 +214,7 @@ func _drop() -> void:
 		cancel()
 		return
 	var displacement := _drop_delta(point, _bounds(roots))
-	var all := entities()
+	var all := _tracked_entities()
 	for object in all:
 		for root in roots:
 			if object == root or object.is_inside_container(root):
@@ -239,7 +240,7 @@ func _physics_process(_delta: float) -> void:
 		if _physics_revision == target_root.layout_revision:
 			return
 		_physics_revision = target_root.layout_revision
-	var all := entities()
+	var all := _tracked_entities()
 	var moved := _last_positions.size() != all.size()
 	if not moved:
 		for object in all:
@@ -267,7 +268,7 @@ func _physics_process(_delta: float) -> void:
 func refresh_layout() -> void:
 	if target_root is Stage and _layout_revision == target_root.layout_revision:
 		return
-	var all := entities()
+	var all := _tracked_entities()
 	# Stage geometry revisions already describe changes. Do not reread every
 	# collision AABB twice just to compare derived inputs on each physics step.
 	if not target_root is Stage:
@@ -287,11 +288,23 @@ func refresh_layout() -> void:
 
 # Containment order only changes when membership changes, never during a drag.
 # Native dictionaries keep validation and member lookup independent of graph size.
+func _tracked_entities() -> Array[Entity]:
+	if target_root is Stage and _topology_revision == target_root.topology_revision:
+		return _outer_first
+	var all := entities()
+	_update_topology(all)
+	return all
+
+
 func _update_topology(all: Array[Entity]) -> void:
+	if target_root is Stage and _topology_revision == target_root.topology_revision:
+		return
 	var key := []
 	for object in all:
 		key.append([object.get_instance_id(), object.container.get_instance_id() if is_instance_valid(object.container) else 0])
 	if key == _topology_key:
+		if target_root is Stage:
+			_topology_revision = target_root.topology_revision
 		return
 	_live.clear()
 	for object in all:
@@ -318,6 +331,8 @@ func _update_topology(all: Array[Entity]) -> void:
 	_outer_first.sort_custom(func(a: Entity, b: Entity) -> bool: return depths[a] < depths[b])
 	_inner_first = _outer_first.duplicate()
 	_inner_first.reverse()
+	if target_root is Stage:
+		_topology_revision = target_root.topology_revision
 
 
 func _capture_layout_inputs(all: Array[Entity]) -> Array:
@@ -332,6 +347,7 @@ func _capture_layout_inputs(all: Array[Entity]) -> Array:
 
 
 func reset_tracking() -> void:
+	_topology_revision = -1
 	_layout_revision = -1
 	_physics_revision = -1
 	_layout_inputs.clear()
