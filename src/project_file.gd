@@ -2,52 +2,39 @@ class_name ProjectFile
 
 const LegacyImporter = preload("res://src/legacy_project_importer.gd")
 
-const FORMAT_VERSION := "3.0.0"
+const BinaryStore = preload("res://src/storage/project_binary_store.gd")
+const Blob = preload("res://src/storage/project_blob.gd")
+const FORMAT_VERSION := "4.0.0"
 const METADATA_PATH := "metadata.json"
 const STAGE_PATH := "stage.json"
 
 
-static func save(path: String, snapshot: Dictionary, camera_state: Dictionary, previous_created_at: String = "", preserved_entries: Dictionary = {}) -> Dictionary:
-	var now := Time.get_datetime_string_from_system(true)
-	var metadata := {
-		"version": FORMAT_VERSION,
-		"created_at": previous_created_at if not previous_created_at.is_empty() else now,
-		"modified_at": now,
-		"object_count": snapshot.get("objects", []).size(),
-	}
-	var graph := snapshot.duplicate(true)
-	graph["camera"] = camera_state
-
-	var writer := ZIPPacker.new()
-	var error := writer.open(path)
-	if error != OK:
-		return _failure("无法创建项目文件: %s" % error_string(error))
-
-	error = _write_json(writer, METADATA_PATH, metadata)
-	if error == OK:
-		error = _write_json(writer, STAGE_PATH, graph)
-	if error == OK:
-		for name in preserved_entries:
-			if not str(name).begins_with("legacy/"):
-				continue
-			error = writer.start_file(name)
-			if error != OK:
-				break
-			error = writer.write_file(preserved_entries[name])
-			var entry_close_error := writer.close_file()
-			if error == OK:
-				error = entry_close_error
-			if error != OK:
-				break
-	var close_error := writer.close()
-	if error != OK:
-		return _failure("无法写入项目文件: %s" % error_string(error))
-	if close_error != OK:
-		return _failure("无法完成项目文件: %s" % error_string(close_error))
-	return {"ok": true, "created_at": metadata.created_at}
+static func save(path: String, snapshot: Dictionary, camera_state: Dictionary, previous_created_at: String = "", preserved_entries: Dictionary = {}, geometry: Dictionary = {}) -> Dictionary:
+	return BinaryStore.save(path, snapshot, camera_state, previous_created_at, preserved_entries, geometry)
 
 
 static func load(path: String) -> Dictionary:
+	if BinaryStore.matches(path):
+		return BinaryStore.load(path)
+	return _load_zip(path)
+
+
+static func prepare_graph_assets(graph: Dictionary) -> Dictionary:
+	# Current eager stage needs every image; do raw I/O in the worker before replacement.
+	for record in graph.get("objects", []):
+		if not record is Dictionary or not record.get("properties") is Dictionary:
+			return _failure("文档对象结构无效")
+		for name in record.properties:
+			var value: Variant = record.properties[name]
+			if value is Blob:
+				var loaded: Dictionary = value.read()
+				if not loaded.ok:
+					return loaded
+				record.properties[name] = loaded.data
+	return {"ok": true}
+
+
+static func _load_zip(path: String) -> Dictionary:
 	var reader := ZIPReader.new()
 	var error := reader.open(path)
 	if error != OK:
@@ -65,7 +52,7 @@ static func load(path: String) -> Dictionary:
 	var preserved_entries := {}
 	for name in reader.get_files():
 		if name.begins_with("legacy/") and not name.ends_with("/"):
-			preserved_entries[name] = reader.read_file(name)
+			preserved_entries[name] = Blob.new(path, {"archive_entry": name})
 	reader.close()
 	if not metadata_result.ok:
 		return metadata_result
@@ -79,15 +66,6 @@ static func load(path: String) -> Dictionary:
 	if not graph.get("objects") is Array:
 		return _failure("stage.json 缺少 objects 数组")
 	return {"ok": true, "metadata": metadata, "graph": graph, "preserved_entries": preserved_entries, "legacy": false}
-
-
-static func _write_json(writer: ZIPPacker, archive_path: String, value: Dictionary) -> Error:
-	var error := writer.start_file(archive_path)
-	if error != OK:
-		return error
-	error = writer.write_file(JSON.stringify(value).to_utf8_buffer())
-	var close_error := writer.close_file()
-	return error if error != OK else close_error
 
 
 static func _read_json(reader: ZIPReader, archive_path: String) -> Dictionary:

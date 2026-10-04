@@ -500,12 +500,18 @@ func save_to_file(path: String) -> bool:
 		"position": [camera.target_position.x, camera.target_position.y],
 		"zoom": camera.target_zoom.x,
 	}
-	var result := ProjectFile.save(path, snapshot, camera_state, created_at, _preserved_entries)
+	var rects := {}
+	for object in stage_objects():
+		if not object is LineEdge:
+			rects[object.id] = object.aabb
+	var geometry := {"layout_version": 1, "font_fingerprint": CanvasTextMetrics.fingerprint(), "rects": rects}
+	var result := ProjectFile.save(path, snapshot, camera_state, created_at, _preserved_entries, geometry)
 	if not result.ok:
 		file_error.emit(result.error)
 		return false
 	current_file_path = path
 	created_at = result.created_at
+	_preserved_entries = result.get("preserved_entries", _preserved_entries)
 	_saved_snapshot = snapshot.duplicate(true)
 	_saved_comparison_state = StageObjectRegistry.comparison_state(self)
 	_dirty_revision = -1

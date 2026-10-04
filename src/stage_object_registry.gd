@@ -1,5 +1,7 @@
 class_name StageObjectRegistry
 
+const ProjectBlob = preload("res://src/storage/project_blob.gd")
+
 ## 仅登记路径，避免解析 Entity/History 时预加载场景并再次解析 Entity 子类。
 const SCENE_PATHS := {
 	"legacy_asset": "res://src/stage_object/entity/legacy_asset/legacy_asset.tscn",
@@ -139,8 +141,18 @@ static func instantiate_record(record: Dictionary, pending_references: Array[Dic
 	var object := scene.instantiate() as StageObject
 	if object == null:
 		return null
+	var properties: Dictionary = record.get("properties", {}).duplicate()
+	for name in properties:
+		var value: Variant = properties[name]
+		if value is ProjectBlob:
+			var loaded: Dictionary = value.read()
+			if not loaded.ok:
+				push_error(loaded.error)
+				object.free()
+				return null
+			properties[name] = loaded.data
 	_restore_transform(object, record.get("transform", {}))
-	_restore_properties(object, record.get("properties", {}), pending_references)
+	_restore_properties(object, properties, pending_references)
 	return object
 
 
@@ -235,6 +247,8 @@ static func _is_serializable_export(property: Dictionary, usage: int) -> bool:
 
 
 static func _encode_value(value):
+	if value is PackedByteArray:
+		return value.duplicate()
 	# 只对 Object 做有效性检查: is_instance_valid() 对任何非 Object 值都返回 false,
 	# 无条件前置检查会把 String / int / Vector2 等普通属性全部写成 null。
 	if value is Object:
@@ -248,6 +262,8 @@ static func _encode_value(value):
 
 
 static func _decode_value(value, current_value):
+	if value is PackedByteArray:
+		return value
 	if current_value is Vector2:
 		var decoded: Variant = _decode_vector2(value)
 		return decoded if decoded != null else current_value

@@ -15,6 +15,10 @@ class ParseJob extends RefCounted:
 		if not loaded.ok:
 			result = loaded
 			return
+		var assets := ProjectFile.prepare_graph_assets(loaded.graph)
+		if not assets.ok:
+			result = assets
+			return
 		var plan := Plan.build(loaded.graph, viewport_size, default_zoom)
 		if not plan.has("ordered"):
 			return
@@ -144,6 +148,10 @@ func _build_batch(stage: Node) -> void:
 		count += 1
 		var references: Array[Dictionary] = []
 		var object := StageObjectRegistry.instantiate_record(entry.record, references)
+		if object == null:
+			stage.file_error.emit("无法恢复项目对象或读取其资产: " + str(entry.record.get("type", "")))
+			_finish(false)
+			return
 		if object != null:
 			if object is TextNode:
 				object.set_meta("prepared_canvas_font", _result.plan.font)

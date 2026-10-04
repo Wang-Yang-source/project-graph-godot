@@ -18,6 +18,104 @@ gi.require_version("PangoCairo", "1.0")
 from gi.repository import GLib, Pango, PangoCairo
 
 MAX_JSON = 16 * 1024 * 1024
+NATIVE_MAGIC = b"PGDOC4\r\n"
+
+
+def native_preview(source):
+    """Read the v4 JSON projection and raw assets, never decode native Variants."""
+    import hashlib
+    import struct
+
+    with open(source, "rb") as stream:
+        header = stream.read(32)
+        if len(header) != 32:
+            raise ValueError("Truncated PRG header")
+        magic, version, length, offset, reserved = struct.unpack("<8sIIQQ", header)
+        file_size = os.fstat(stream.fileno()).st_size
+        if (
+            magic != NATIVE_MAGIC
+            or version != 4
+            or reserved != 0
+            or not 0 < length <= 4 * 1024 * 1024
+            or offset < 32
+            or offset + length != file_size
+        ):
+            raise ValueError("Invalid PRG directory")
+        stream.seek(offset)
+        manifest = json.loads(stream.read(length))
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("version") != 4
+            or manifest.get("codec") != "godot-variant-4"
+            or not isinstance(manifest.get("blocks"), dict)
+            or len(manifest["blocks"]) > 200000
+        ):
+            raise ValueError("Unsupported PRG manifest")
+        blocks = manifest["blocks"]
+        spans = []
+        for entry in blocks.values():
+            if not isinstance(entry, dict):
+                raise TypeError("Invalid PRG block")
+            start, count = entry.get("offset"), entry.get("length")
+            digest = entry.get("sha256")
+            if (
+                type(start) is not int
+                or type(count) is not int
+                or start < 32
+                or not 0 <= count <= 256 * 1024 * 1024
+                or start + count > offset
+                or entry.get("kind") not in ("variant", "raw", "json")
+                or not isinstance(digest, str)
+                or len(digest) != 64
+                or any(c not in "0123456789abcdef" for c in digest)
+            ):
+                raise ValueError("Invalid PRG block range or checksum")
+            spans.append((start, start + count))
+        previous = 32
+        for start, end in sorted(spans):
+            if start < previous:
+                raise ValueError("Overlapping PRG blocks")
+            previous = end
+
+        def read_block(name, kind):
+            entry = blocks[name]
+            if entry["kind"] != kind or entry["length"] > MAX_JSON:
+                raise ValueError("PRG preview block exceeds limit")
+            stream.seek(entry["offset"])
+            data = stream.read(entry["length"])
+            if (
+                len(data) != entry["length"]
+                or hashlib.sha256(data).hexdigest() != entry["sha256"]
+            ):
+                raise ValueError("Damaged PRG preview block")
+            return data
+
+        graph = json.loads(read_block("preview", "json"))
+        if not isinstance(graph, dict) or not isinstance(graph.get("objects"), list):
+            raise TypeError("Invalid PRG preview graph")
+        if len(graph["objects"]) > 5000:
+            raise ValueError("PRG preview has too many objects")
+        attachments = {}
+        total_bytes = 0
+        for obj in graph["objects"]:
+            if not isinstance(obj, dict) or not isinstance(obj.get("properties"), dict):
+                raise TypeError("Invalid PRG preview record")
+            props = obj["properties"]
+            identifier = props.get("preview_attachment")
+            if not identifier or identifier in attachments:
+                continue
+            entry = blocks["asset/" + identifier]
+            if (
+                entry["length"] > MAX_JSON
+                or total_bytes + entry["length"] > 64 * 1024 * 1024
+            ):
+                continue
+            data = read_block("asset/" + identifier, "raw")
+            total_bytes += len(data)
+            attachments[identifier] = image_surface(
+                data, native_text(props.get("image_format", "png"))
+            )
+        return graph, attachments
 
 
 def prefers_light_theme():
@@ -368,51 +466,60 @@ def write_preview(surface, output):
 def render(source, output, requested_size):
     # Keep two device pixels per requested pixel for high-density previews.
     size = 2 * max(32, min(1024, int(requested_size)))
-    if os.path.getsize(source) > 256 * 1024 * 1024:
-        raise ValueError("Document exceeds thumbnail size limit")
-    with zipfile.ZipFile(source) as archive:
-        if len(archive.infolist()) > 10000:
-            raise ValueError("Too many archive entries")
-        attachments = {}
-        if "stage.json" in archive.namelist():
-            graph = json.loads(archive_bytes(archive, "stage.json"))
-        elif "stage.msgpack" in archive.namelist():
-            if "thumbnail.png" in archive.namelist():
-                original = image_surface(archive_bytes(archive, "thumbnail.png"), "png")
-                surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
-                ctx = cairo.Context(surface)
-                factor = min(size / original.get_width(), size / original.get_height())
-                ctx.translate(
-                    (size - original.get_width() * factor) / 2,
-                    (size - original.get_height() * factor) / 2,
-                )
-                ctx.scale(factor, factor)
-                ctx.set_source_surface(original)
-                ctx.paint()
-                write_preview(surface, output)
-                return
-            import msgpack
+    with open(source, "rb") as stream:
+        is_native = stream.read(8) == NATIVE_MAGIC
+    if is_native:
+        graph, attachments = native_preview(source)
+    else:
+        if os.path.getsize(source) > 256 * 1024 * 1024:
+            raise ValueError("Document exceeds thumbnail size limit")
+        with zipfile.ZipFile(source) as archive:
+            if len(archive.infolist()) > 10000:
+                raise ValueError("Too many archive entries")
+            attachments = {}
+            if "stage.json" in archive.namelist():
+                graph = json.loads(archive_bytes(archive, "stage.json"))
+            elif "stage.msgpack" in archive.namelist():
+                if "thumbnail.png" in archive.namelist():
+                    original = image_surface(
+                        archive_bytes(archive, "thumbnail.png"), "png"
+                    )
+                    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, size, size)
+                    ctx = cairo.Context(surface)
+                    factor = min(
+                        size / original.get_width(), size / original.get_height()
+                    )
+                    ctx.translate(
+                        (size - original.get_width() * factor) / 2,
+                        (size - original.get_height() * factor) / 2,
+                    )
+                    ctx.scale(factor, factor)
+                    ctx.set_source_surface(original)
+                    ctx.paint()
+                    write_preview(surface, output)
+                    return
+                import msgpack
 
-            graph = legacy_graph(
-                msgpack.unpackb(
-                    archive_bytes(archive, "stage.msgpack"),
-                    max_str_len=MAX_JSON,
-                    max_array_len=300000,
-                    max_map_len=300000,
+                graph = legacy_graph(
+                    msgpack.unpackb(
+                        archive_bytes(archive, "stage.msgpack"),
+                        max_str_len=MAX_JSON,
+                        max_array_len=300000,
+                        max_map_len=300000,
+                    )
                 )
-            )
-            for obj in graph["objects"]:
-                identifier = obj["properties"].get("preview_attachment")
-                if not identifier:
-                    continue
-                for name in archive.namelist():
-                    if name.startswith("attachments/" + identifier + "."):
-                        attachments[identifier] = image_surface(
-                            archive_bytes(archive, name), name.rsplit(".", 1)[-1]
-                        )
-                        break
-        else:
-            raise ValueError("Missing stage.json or stage.msgpack")
+                for obj in graph["objects"]:
+                    identifier = obj["properties"].get("preview_attachment")
+                    if not identifier:
+                        continue
+                    for name in archive.namelist():
+                        if name.startswith("attachments/" + identifier + "."):
+                            attachments[identifier] = image_surface(
+                                archive_bytes(archive, name), name.rsplit(".", 1)[-1]
+                            )
+                            break
+            else:
+                raise ValueError("Missing stage.json or stage.msgpack")
     objects = graph.get("objects")
     if not isinstance(objects, list) or len(objects) > 5000:
         raise ValueError("Invalid or oversized graph")

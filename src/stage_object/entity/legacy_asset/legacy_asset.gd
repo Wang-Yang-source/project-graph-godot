@@ -2,6 +2,10 @@ class_name LegacyAsset
 extends Entity
 ## Native image entity used by the master archive importer.
 
+@export_storage var image_bytes := PackedByteArray():
+	set(value):
+		image_bytes = value
+		notify_persistent_change()
 @export_storage var image_base64 := "":
 	set(value):
 		image_base64 = value
@@ -23,7 +27,10 @@ extends Entity
 func _ready() -> void:
 	super()
 	var image := Image.new()
-	var data := Marshalls.base64_to_raw(image_base64)
+	if image_bytes.is_empty() and not image_base64.is_empty():
+		image_bytes = Marshalls.base64_to_raw(image_base64)
+		image_base64 = ""
+	var data := image_bytes
 	var error := ERR_FILE_UNRECOGNIZED
 	match image_format:
 		"png": error = image.load_png_from_buffer(data)

@@ -1,7 +1,9 @@
 """Offline regressions for preview framing and output resolution."""
 
+import hashlib
 import importlib.util
 import json
+import struct
 import tempfile
 import unittest
 import zipfile
@@ -17,6 +19,60 @@ SPEC.loader.exec_module(thumbnailer)
 
 
 class ThumbnailTests(unittest.TestCase):
+    def native_document(self, directory, graph):
+        source = Path(directory, "native.prg")
+        blocks = {}
+        data = bytearray(b"\0" * 32)
+        for name, kind, payload in (
+            ("records", "variant", b"not-decoded-by-thumbnailer"),
+            ("preview", "json", json.dumps(graph).encode()),
+        ):
+            blocks[name] = {
+                "offset": len(data),
+                "length": len(payload),
+                "kind": kind,
+                "sha256": hashlib.sha256(payload).hexdigest(),
+            }
+            data.extend(payload)
+        manifest = json.dumps(
+            {"version": 4, "codec": "godot-variant-4", "blocks": blocks}
+        ).encode()
+        data[:32] = struct.pack(
+            "<8sIIQQ", thumbnailer.NATIVE_MAGIC, 4, len(manifest), len(data), 0
+        )
+        data.extend(manifest)
+        source.write_bytes(data)
+        return source, blocks
+
+    def test_native_preview_does_not_decode_records(self):
+        graph = {"objects": [self.node("a", "Native preview", x=20, y=30)]}
+        with tempfile.TemporaryDirectory() as directory:
+            source, _ = self.native_document(directory, graph)
+            loaded, assets = thumbnailer.native_preview(str(source))
+            self.assertEqual(loaded, graph)
+            self.assertEqual(assets, {})
+            output = Path(directory, "native.png")
+            with patch.object(thumbnailer, "prefers_light_theme", return_value=False):
+                thumbnailer.render(str(source), str(output), 256)
+            image = cairo.ImageSurface.create_from_png(str(output))
+            self.assertEqual((image.get_width(), image.get_height()), (512, 512))
+
+    def test_native_preview_rejects_checksum_damage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, blocks = self.native_document(directory, {"objects": []})
+            data = bytearray(source.read_bytes())
+            data[blocks["preview"]["offset"]] ^= 1
+            source.write_bytes(data)
+            with self.assertRaisesRegex(ValueError, "Damaged PRG preview block"):
+                thumbnailer.native_preview(str(source))
+
+    def test_native_preview_rejects_truncated_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            source, _ = self.native_document(directory, {"objects": []})
+            source.write_bytes(source.read_bytes()[:-1])
+            with self.assertRaisesRegex(ValueError, "Invalid PRG directory"):
+                thumbnailer.native_preview(str(source))
+
     def render_graph(self, objects, light=False):
         with tempfile.TemporaryDirectory() as directory:
             source = Path(directory, "graph.prg")

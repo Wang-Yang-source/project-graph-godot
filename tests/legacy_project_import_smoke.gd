@@ -92,7 +92,10 @@ func _run() -> void:
 		check(stage.save_to_file(saved_path), "Converted document saves")
 		var saved := ProjectFile.load(saved_path)
 		check(saved.ok and not saved.legacy, "Saved document uses native Godot format")
-		check(saved.preserved_entries == result.preserved_entries, "All original archive entries survive byte-for-byte")
+		check(saved.preserved_entries.keys().size() == result.preserved_entries.keys().size(), "All original archive entries remain indexed")
+		for entry in result.preserved_entries:
+			var preserved: Dictionary = saved.preserved_entries[entry].read()
+			check(preserved.ok and preserved.data == result.preserved_entries[entry], "All original archive entries survive byte-for-byte")
 		check(await stage.load_from_file(saved_path), "Converted document reloads")
 		await settle()
 		for object in stage.stage_objects():

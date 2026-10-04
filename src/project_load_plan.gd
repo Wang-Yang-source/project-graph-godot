@@ -60,6 +60,17 @@ static func build(graph: Dictionary, viewport_size: Vector2 = Vector2(1280, 719)
 				neighbors[parent].append(identifier)
 	var camera_xy: Variant = graph.get("camera", {}).get("position")
 	var center := bounds.get_center()
+	var cache: Variant = graph.get("_open_geometry", {})
+	var use_cache: bool = cache is Dictionary and cache.get("layout_version") == 1 and cache.get("font_fingerprint") == CanvasTextMetrics.fingerprint() and cache.get("rects") is Dictionary
+	if use_cache:
+		for identifier in positions:
+			var cached: Variant = cache.rects.get(identifier)
+			if not cached is Rect2:
+				use_cache = false
+				break
+			if not cached.position.is_finite() or not cached.size.is_finite() or cached.size.x < 0.0 or cached.size.y < 0.0:
+				use_cache = false
+				break
 	var font := TextNode._make_canvas_font(preload("res://assets/fonts/PingFang-SC-Regular.ttf"))
 	for identifier in positions:
 		var record: Dictionary = records[identifier]
@@ -68,6 +79,9 @@ static func build(graph: Dictionary, viewport_size: Vector2 = Vector2(1280, 719)
 		if records.has(parent):
 			parents[identifier] = parent
 			group_ids[parent] = true
+		if use_cache:
+			rects[identifier] = cache.rects[identifier]
+			continue
 		var transform_data: Dictionary = record.get("transform", {})
 		var size := Vector2(80, 72)
 		var origin := Vector2.ZERO
@@ -104,7 +118,7 @@ static func build(graph: Dictionary, viewport_size: Vector2 = Vector2(1280, 719)
 		depths[identifier] = depth
 	var group_order := group_ids.keys()
 	group_order.sort_custom(func(a: String, b: String) -> bool: return int(depths.get(a, 0)) > int(depths.get(b, 0)))
-	for identifier in group_order:
+	for identifier in ([] if use_cache else group_order):
 		var members := Rect2()
 		var initialized := false
 		for child in parents:

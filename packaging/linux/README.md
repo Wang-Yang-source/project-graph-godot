@@ -4,7 +4,7 @@ RPM 安装时自动完成以下配置，用户无需执行文件关联脚本：
 
 - 注册 `application/x-project-graph` 与 `.prg`，使用专属文件图标。
 - 将 Project Graph 注册为该类型的系统默认应用。已有用户级的显式默认选择按桌面规范优先。
-- 安装 GNOME thumbnailer，兼容 ZIP 内的 `stage.json` 和 master 的 `stage.msgpack`。旧存档有 `thumbnail.png` 时直接使用；没有时离线解析图与附件，已有文件无需重存。
+- 安装 GNOME thumbnailer，支持 PRG v4 的独立预览投影与图片块，并兼容 ZIP 内的 `stage.json` 和 master 的 `stage.msgpack`。旧存档有 `thumbnail.png` 时直接使用；没有时离线解析图与附件，已有文件无需重存。v4 回归已通过，安装验证尚未执行，详见 [格式定义](../../docs/specs/prg-v4.md)。
 - 双击文档通过 `--` 后的路径参数打开；支持中文、空格与多个文档。
 - 卸载移除默认应用条目并刷新数据库，不删除用户文档。
 
