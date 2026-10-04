@@ -2,6 +2,7 @@ class_name History
 extends Node2D
 
 const MAX_HISTORY_SIZE := 100
+const SnapshotDelta = preload("res://src/storage/snapshot_delta.gd")
 
 @export var target_root: Node
 @export var velocity_threshold := 2.0
@@ -62,7 +63,9 @@ func _finish_commit() -> void:
 	_transaction_snapshot = { }
 	if _snapshots_equal(before, after):
 		return
-	_undo_stack.append({ "before": before, "after": after })
+	var delta := SnapshotDelta.between(before, after)
+	# Non-document targets can still use the original snapshot contract.
+	_undo_stack.append(delta if delta.ok else {"before":before, "after":after})
 	if _undo_stack.size() > MAX_HISTORY_SIZE:
 		_undo_stack.pop_front()
 	_redo_stack.clear()
@@ -75,10 +78,16 @@ func undo() -> void:
 	if _busy or _undo_stack.is_empty():
 		return
 	_busy = true
-	var entry: Dictionary = _undo_stack.pop_back()
-	await _restore_snapshot(entry.before)
+	var entry: Dictionary = _undo_stack.back()
+	var prepared := _entry_snapshot(entry, false)
+	if not prepared.ok:
+		push_error(prepared.error)
+		_busy = false
+		return
+	_undo_stack.pop_back()
+	await _restore_snapshot(prepared.snapshot)
 	_redo_stack.append(entry)
-	_current_snapshot = entry.before
+	_current_snapshot = prepared.snapshot
 	_busy = false
 
 
@@ -88,10 +97,16 @@ func redo() -> void:
 	if _busy or _redo_stack.is_empty():
 		return
 	_busy = true
-	var entry: Dictionary = _redo_stack.pop_back()
-	await _restore_snapshot(entry.after)
+	var entry: Dictionary = _redo_stack.back()
+	var prepared := _entry_snapshot(entry, true)
+	if not prepared.ok:
+		push_error(prepared.error)
+		_busy = false
+		return
+	_redo_stack.pop_back()
+	await _restore_snapshot(prepared.snapshot)
 	_undo_stack.append(entry)
-	_current_snapshot = entry.after
+	_current_snapshot = prepared.snapshot
 	_busy = false
 
 
@@ -128,6 +143,12 @@ func can_undo() -> bool:
 
 func can_redo() -> bool:
 	return not _redo_stack.is_empty()
+
+
+func _entry_snapshot(entry: Dictionary, forward: bool) -> Dictionary:
+	if entry.has("changes"):
+		return SnapshotDelta.apply(_current_snapshot, entry, forward)
+	return {"ok":true, "snapshot":entry.after if forward else entry.before}
 
 
 func _capture_snapshot() -> Dictionary:
