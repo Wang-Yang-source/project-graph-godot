@@ -7,6 +7,7 @@ extends Node2D
 
 const Corners = preload("res://src/main/continuous_corners.gd")
 const Palette = preload("res://src/main/theme_palette.gd")
+const Readability = preload("res://src/stage/text_readability.gd")
 const PreviewCapture = preload("res://src/stage/preview_texture_capture.gd")
 const TITLE_FONT_SIZE := 100
 # Physical screen pixels: switch hierarchy before ordinary text becomes unreadable.
@@ -456,7 +457,7 @@ func _update_native_previews() -> void:
 	for identifier in _native_resolutions.keys():
 		if not roots.has(identifier):
 			_native_resolutions.erase(identifier)
-	var key := [_layout_revision, stage.document_revision, roots, resolutions, _preview_nodes.keys()]
+	var key := [_layout_revision, stage.document_revision, roots, resolutions, _preview_nodes.keys(), Readability.CACHE_VERSION]
 	if key == _native_preview_key:
 		for data in _native_previews.values():
 			data.image.visible = stage.world_view_rect.intersects(data.rect, true)
@@ -489,7 +490,7 @@ func _update_native_previews() -> void:
 		for child_id in _preview_nodes:
 			if child_id != identifier and _cover_groups.get(child_id, []).has(identifier):
 				borderless.append(child_id)
-		var content_key := [_native_resolutions[identifier], borderless, stage._applied_theme_light, _native_content_versions(identifier)]
+		var content_key := [Readability.CACHE_VERSION, _native_resolutions[identifier], borderless, stage._applied_theme_light, _native_content_versions(identifier)]
 		if _native_previews.has(identifier):
 			var cached: Dictionary = _native_previews[identifier]
 			if cached.get("content_key", []) == content_key:
@@ -542,6 +543,10 @@ func _update_native_previews() -> void:
 					head.color = line.default_color
 					head.z_index = 1
 					view.add_child(head)
+		# Cache text is weighted for its render resolution, independent of camera zoom.
+		for child in view.get_children():
+			if child is Label:
+				Readability.apply(child, child.get_theme_font_size("font_size") * child.scale.abs().x * factor)
 		view.canvas_transform = Transform2D(0.0, Vector2.ONE * factor, 0.0, -rect.position * factor)
 		var image := Sprite2D.new()
 		image.texture = view.get_texture()
@@ -777,6 +782,8 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var pixel_scale := pow(2.0, (floorf(log(scale) / log(2.0) * 16.0 + offset) - offset) / 16.0)
 	var presentation_key := [revision, stage.document_revision, pixel_scale, rect, root, covered, stage._applied_theme_light]
 	if panel.get_meta("presentation_key", []) == presentation_key:
+		var cached_title: Label = panel.get_node("Title")
+		Readability.apply(cached_title, TITLE_FONT_SIZE * cached_title.scale.x * scale / pixel_scale)
 		return
 	panel.set_meta("presentation_key", presentation_key)
 	var light := group._display_theme_is_light()
@@ -792,6 +799,8 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	var content_key := [text, foreground]
 	var key := [revision, pixel_scale, rect, root, covered, _miniatures.has(identifier), content_key, background, border_color, group.font_size]
 	if panel.get_meta("summary_key", []) == key:
+		var cached_title: Label = panel.get_node("Title")
+		Readability.apply(cached_title, TITLE_FONT_SIZE * cached_title.scale.x * scale / pixel_scale)
 		return
 	panel.set_meta("summary_key", key)
 	panel.position = to_local(rect.position)
@@ -834,6 +843,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 	title.visible = not text.strip_edges().is_empty() and desired * scale / pixel_scale >= 5.0
 	title.size = measured
 	title.scale = Vector2.ONE * factor
+	Readability.apply(title, desired * scale / pixel_scale)
 	title.position = title_area.position + (title_area.size - measured * factor) * .5
 	# The direct next-layer preview stays above the parent to preserve requested
 	# readability, while every covered title uses the master fitting formula.
