@@ -503,6 +503,14 @@ func _refresh_control_corners(control: Control, key: StringName) -> void:
 	control.add_theme_stylebox_override(key, Corners.style(original, radius, true, true))
 
 
+func get_visual_outline_key() -> Array:
+	var control: Control = container_panel if _container_active else label
+	var key: StringName = &"panel" if _container_active else &"normal"
+	var original := Corners.source(control.get_theme_stylebox(key))
+	var radius := float(original.corner_radius_top_left) if original != null else 0.0
+	return [get_visual_rect(), radius]
+
+
 func get_visual_outline() -> PackedVector2Array:
 	var control: Control = container_panel if _container_active else label
 	var key: StringName = &"panel" if _container_active else &"normal"

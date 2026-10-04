@@ -27,6 +27,9 @@ extends StageObject
 
 var _physics_outline: CollisionShape2D
 var _collision_outline_pending := false
+var _collision_outline_key: Array = []
+var _collision_outline_shape: Shape2D
+var _collision_outline_transform := Transform2D.IDENTITY
 
 const THROW_SAMPLE_SECONDS := 0.08
 static var _native_material: PhysicsMaterial
@@ -119,6 +122,23 @@ func _refresh_collision_outline() -> void:
 		# Keep the original geometry for picking, connections and editor bounds.
 		source.set_meta("editor_geometry_only", true)
 		source.disabled = true
+	# World translation does not alter the local hull. Include the visual outline
+	# inputs so equal bounds never hide a corner/shape change.
+	var outline_key := [initialized, bounds]
+	var visual_points := PackedVector2Array()
+	if has_method("get_visual_outline_key"):
+		outline_key.append(call("get_visual_outline_key"))
+	elif has_method("get_visual_outline"):
+		visual_points = call("get_visual_outline")
+		outline_key.append(visual_points)
+	if (
+		outline_key == _collision_outline_key
+		and _physics_outline != null
+		and not _physics_outline.disabled
+		and _physics_outline.shape == _collision_outline_shape
+		and _physics_outline.transform == _collision_outline_transform
+	):
+		return
 	if not initialized:
 		if _physics_outline != null:
 			_physics_outline.disabled = true
@@ -129,7 +149,9 @@ func _refresh_collision_outline() -> void:
 		_physics_outline.set_meta("physics_outline", true)
 		add_child(_physics_outline)
 	if has_method("get_visual_outline"):
-		var points: PackedVector2Array = Geometry2D.convex_hull(call("get_visual_outline"))
+		if visual_points.is_empty():
+			visual_points = call("get_visual_outline")
+		var points: PackedVector2Array = Geometry2D.convex_hull(visual_points)
 		if points.size() > 1 and points[0].is_equal_approx(points[-1]):
 			points.resize(points.size() - 1)
 		var polygon := _physics_outline.shape as ConvexPolygonShape2D
@@ -146,6 +168,9 @@ func _refresh_collision_outline() -> void:
 			_physics_outline.shape = shape
 		_physics_outline.position = bounds.get_center()
 	_physics_outline.disabled = false
+	_collision_outline_key = outline_key
+	_collision_outline_shape = _physics_outline.shape
+	_collision_outline_transform = _physics_outline.transform
 
 
 func _uses_native_physics() -> bool:
