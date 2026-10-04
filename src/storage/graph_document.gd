@@ -258,3 +258,39 @@ func object_counts() -> Vector2i:
 		elif value.type in ["line_edge", "venn_region"]:
 			counts.y += 1
 	return counts
+
+## Copy containment descendants and internal relationships without creating views.
+func selection_ids(identifiers: PackedStringArray) -> PackedStringArray:
+	var selected := {}
+	var queue := Array(identifiers)
+	var cursor := 0
+	while cursor < queue.size():
+		var identifier: String = queue[cursor]
+		cursor += 1
+		if selected.has(identifier) or not _records.has(identifier):
+			continue
+		selected[identifier] = true
+		queue.append_array(Array(children(identifier)))
+	for value in _document.objects:
+		if value.type == "line_edge" and selected.has(value.references.source) and selected.has(value.references.target):
+			selected[value.id] = true
+		elif value.type == "venn_region":
+			var members: Variant = value.properties.get("member_ids", [])
+			var complete: bool = members.size() >= 2
+			for identifier in members:
+				complete = complete and selected.has(identifier)
+			if complete:
+				selected[value.id] = true
+	var ordered := PackedStringArray()
+	for value in _document.objects:
+		if selected.has(value.id):
+			ordered.append(value.id)
+	return ordered
+
+func selection_snapshot(identifiers: PackedStringArray) -> Dictionary:
+	var selected := selection_ids(identifiers)
+	var subset := {"objects": [], "camera": {}}
+	for value in _document.objects:
+		if selected.has(value.id):
+			subset.objects.append(value)
+	return Codec.to_snapshot(subset, _assets)

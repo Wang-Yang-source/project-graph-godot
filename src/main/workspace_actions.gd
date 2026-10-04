@@ -6,27 +6,13 @@ static var clipboard_text := ""
 
 
 static func copy_selection(stage: Stage) -> void:
-	var selected := stage.selected_ids.duplicate()
-	var roots := stage.drag_entities()
-	for object in stage.stage_objects():
-		if object is Entity:
-			for root in roots:
-				if object.is_inside_container(root) and not selected.has(object.id):
-					selected.append(object.id)
-					break
-	for object in stage.stage_objects():
-		if object is LineEdge and is_instance_valid(object.source) and is_instance_valid(object.target) and selected.has(object.source.id) and selected.has(object.target.id) and not selected.has(object.id):
-			selected.append(object.id)
-	var objects: Array = StageObjectRegistry.capture(stage).objects
-	var copied: Array = []
-	for object in objects:
-		if selected.has(str(StageObjectRegistry._decode_value(object.properties.get("id", ""), ""))):
-			copied.append(object)
-	clipboard = {"objects": copied}
-	var text := []
-	for node in stage.selected_objects():
-		if node is TextNode:
-			text.append(node.text)
+	stage.document_snapshot()
+	clipboard = stage.document_model.selection_snapshot(stage.selected_ids)
+	var text := PackedStringArray()
+	for identifier in stage.selected_ids:
+		var record := stage.document_model.record(identifier)
+		if record.get("type") == "text_node":
+			text.append(str(record.properties.get("text", "")))
 	clipboard_text = "\n".join(text)
 	DisplayServer.clipboard_set(clipboard_text)
 
@@ -41,15 +27,12 @@ static func paste(stage: Stage) -> void:
 		var pending: Array[Dictionary] = []
 		var ids := PackedStringArray()
 		for data in clipboard.objects:
-			var scene: PackedScene = StageObjectRegistry.get_scene(str(data.type))
-			if scene == null:
-				continue
-			var node := scene.instantiate() as StageObject
 			var old_id := str(StageObjectRegistry._decode_value(data.properties.get("id", ""), ""))
-			var properties: Dictionary = data.properties.duplicate(true)
-			properties.erase("id")
-			StageObjectRegistry._restore_transform(node, data.get("transform", {}))
-			StageObjectRegistry._restore_properties(node, properties, pending)
+			var record: Dictionary = data.duplicate(true)
+			record.properties.erase("id")
+			var node := StageObjectRegistry.instantiate_record(record, pending)
+			if node == null:
+				continue
 			node.position += Vector2(48, 48)
 			stage.add_child(node)
 			by_old_id[old_id] = node
@@ -69,6 +52,7 @@ static func paste(stage: Stage) -> void:
 		stage.select_ids(complete_ids)
 	stage.get_node("EntityLayerMover").reset_tracking()
 	stage.history.commit()
+
 
 
 static func generate(stage: Stage, source: String, mode: int) -> int:
@@ -141,30 +125,32 @@ static func group_selection(stage: Stage) -> TextNode:
 
 
 static func export_text(stage: Stage, format: String, selected_only := true) -> String:
-	var nodes := stage.selected_objects() if selected_only else stage.stage_objects()
-	var texts := PackedStringArray()
-	for node in nodes:
-		if node is TextNode:
-			texts.append(node.text)
-	if format == "mermaid":
-		var result := "graph TD\n"
-		for node in nodes:
-			if node is TextNode:
-				result += "  n%s[\"%s\"]\n" % [node.id, node.text.replace("\"", "&quot;").replace("\n", " ")]
-		for edge in stage.stage_objects():
-			if edge is LineEdge and is_instance_valid(edge.source) and is_instance_valid(edge.target) and nodes.has(edge.source) and nodes.has(edge.target):
-				result += "  n%s --> n%s\n" % [edge.source.id, edge.target.id]
-		return result
+	stage.document_snapshot()
+	var records: Array = stage.document_model.native_document().objects
+	var nodes := []
+	var edges := []
+	for record in records:
+		if record.type == "text_node" and (not selected_only or stage.selected_ids.has(record.id)):
+			nodes.append({"id": record.id, "text": str(record.properties.get("text", ""))})
+		elif record.type == "line_edge":
+			edges.append({"source": {"id": record.references.source}, "target": {"id": record.references.target}})
 	var chosen := {}
 	var children := {}
 	var indegree := {}
 	for node in nodes:
-		if node is TextNode:
-			chosen[node.id] = node
-			children[node.id] = PackedStringArray()
-			indegree[node.id] = 0
-	for edge in stage.stage_objects():
-		if edge is LineEdge and is_instance_valid(edge.source) and is_instance_valid(edge.target) and chosen.has(edge.source.id) and chosen.has(edge.target.id):
+		chosen[node.id] = node
+		children[node.id] = PackedStringArray()
+		indegree[node.id] = 0
+	if format == "mermaid":
+		var result := "graph TD\n"
+		for node in nodes:
+			result += "  n%s[\"%s\"]\n" % [node.id, node.text.replace("\"", "&quot;").replace("\n", " ")]
+		for edge in edges:
+			if chosen.has(edge.source.id) and chosen.has(edge.target.id):
+				result += "  n%s --> n%s\n" % [edge.source.id, edge.target.id]
+		return result
+	for edge in edges:
+		if chosen.has(edge.source.id) and chosen.has(edge.target.id):
 			var outgoing: PackedStringArray = children[edge.source.id]
 			if not outgoing.has(edge.target.id):
 				outgoing.append(edge.target.id)
@@ -224,15 +210,18 @@ static func export_svg(stage: Stage, selected_only := false) -> String:
 
 
 static func graph_components(stage: Stage) -> Array[Dictionary]:
-	var entities: Array[StageObject] = []
+	stage.document_snapshot()
+	var records: Array = stage.document_model.native_document().objects
+	var entities: Array[Dictionary] = []
 	var adjacency := {}
-	for object in stage.stage_objects():
-		if object is Entity:
+	for object in records:
+		if GraphDocument.Codec.ENTITY_TYPES.has(object.type):
 			entities.append(object)
 			adjacency[object.id] = PackedStringArray()
-	var edges: Array[LineEdge] = []
-	for object in stage.stage_objects():
-		if object is LineEdge and is_instance_valid(object.source) and is_instance_valid(object.target):
+	var edges: Array[Dictionary] = []
+	for record in records:
+		if record.type == "line_edge":
+			var object := {"source": {"id": record.references.source}, "target": {"id": record.references.target}}
 			edges.append(object)
 			if adjacency.has(object.source.id) and adjacency.has(object.target.id):
 				var a: PackedStringArray = adjacency[object.source.id]
@@ -247,9 +236,11 @@ static func graph_components(stage: Stage) -> Array[Dictionary]:
 		if visited.has(entity.id):
 			continue
 		var queue := [entity.id]
+		var cursor := 0
 		var ids := PackedStringArray()
-		while not queue.is_empty():
-			var id: String = queue.pop_front()
+		while cursor < queue.size():
+			var id: String = queue[cursor]
+			cursor += 1
 			if visited.has(id):
 				continue
 			visited[id] = true
@@ -259,28 +250,34 @@ static func graph_components(stage: Stage) -> Array[Dictionary]:
 		var max_degree := 0
 		for id in ids:
 			max_degree = maxi(max_degree, adjacency[id].size())
-		for edge in edges:
-			if ids.has(edge.source.id) and ids.has(edge.target.id):
-				component_edges += 1
+		for id in ids:
+			component_edges += adjacency[id].size()
+		component_edges = component_edges / 2
 		var kind := "独立节点"
 		if ids.size() > 1:
 			kind = "路径" if max_degree <= 2 else ("星形" if max_degree == ids.size() - 1 else "树")
 			if component_edges >= ids.size():
 				kind = "网络"
-		result.append({"ids": ids, "edges": component_edges, "kind": kind, "title": entity.text if entity is TextNode else "画笔"})
+		result.append({"ids": ids, "edges": component_edges, "kind": kind, "title": str(entity.properties.get("text", "画笔"))})
 	return result
 
 
 static func _append_tree_text(id: String, depth: int, nodes: Dictionary, children: Dictionary, visited: Dictionary, markdown: bool, result: PackedStringArray) -> void:
-	var line: String = str(nodes[id].text).replace("\n", " ")
-	var prefix := "  ".repeat(depth) + ("- " if markdown else "")
-	if visited.has(id):
-		result.append(prefix + "↪ " + line)
-		return
-	result.append(prefix + line)
-	visited[id] = true
-	for child_id in children[id]:
-		_append_tree_text(child_id, depth + 1, nodes, children, visited, markdown, result)
+	# Native arrays form a traversal stack; deep maps do not consume script call frames.
+	var stack := [{"id": id, "depth": depth}]
+	while not stack.is_empty():
+		var current: Dictionary = stack.pop_back()
+		var identifier: String = current.id
+		var line: String = str(nodes[identifier].text).replace("\n", " ")
+		var prefix := "  ".repeat(current.depth) + ("- " if markdown else "")
+		if visited.has(identifier):
+			result.append(prefix + "↪ " + line)
+			continue
+		result.append(prefix + line)
+		visited[identifier] = true
+		var outgoing: PackedStringArray = children[identifier]
+		for index in range(outgoing.size() - 1, -1, -1):
+			stack.append({"id": outgoing[index], "depth": current.depth + 1})
 
 
 # 树形编辑只添加必要的领域操作，几何、节点与历史复用 Godot 和现有注册表。
