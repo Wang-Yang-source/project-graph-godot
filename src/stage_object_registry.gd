@@ -4,8 +4,8 @@ class_name StageObjectRegistry
 const SCENE_PATHS := {
 	"legacy_asset": "res://src/stage_object/entity/legacy_asset/legacy_asset.tscn",
 	"pen_stroke": "res://src/stage_object/entity/pen_stroke/pen_stroke.tscn",
-	"text_node": "uid://btnefrbc5lowu",
-	"line_edge": "uid://dodce5rghnax4",
+	"text_node": "res://src/stage_object/entity/text_node/text_node.res",
+	"line_edge": "res://src/stage_object/association/line_edge/line_edge.res",
 }
 static var _scenes: Dictionary[String, PackedScene] = {}
 

@@ -281,7 +281,7 @@ func _refresh_selection_outlines() -> void:
 		if is_overview_hidden(object):
 			continue
 		# The expanding editor owns its focus outline; keep the physics bounds stable.
-		if object is TextNode and object.text_edit.visible:
+		if object is TextNode and object._editing:
 			continue
 		# Selection stays in the document; no translucent outer frame for entities.
 		if object is Entity:
@@ -417,7 +417,7 @@ func is_dirty() -> bool:
 			continue
 		if object is LineEdge and object.is_text_dirty():
 			return true
-		if object is TextNode and object.text_edit.visible and object.text_edit.text != object.text:
+		if object is TextNode and object._editing and object.text_edit.text != object.text:
 			return true
 	if _dirty_revision != document_revision:
 		_cached_dirty = not StageObjectRegistry.matches_comparison_state(self, _saved_comparison_state)

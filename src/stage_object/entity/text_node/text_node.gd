@@ -17,7 +17,10 @@ var _fill_layer := 1
 var _normal_label_position := Vector2.ZERO
 var _normal_edit_position := Vector2.ZERO
 
-@onready var text_edit: AutoSizeTextEdit = %TextEdit
+var _text_edit: AutoSizeTextEdit
+var text_edit: AutoSizeTextEdit:
+	get:
+		return _ensure_text_editor()
 var _edit_menu: PopupMenu
 
 # Theme hierarchy is independent of spatial containers and ordinary edges.
@@ -90,12 +93,6 @@ func _ready() -> void:
 	label.text = text
 	# 输入层使用左上角定位，最小尺寸变化不能再从中心推动控件。
 	# Clicking selected text should position the caret, not start dragging the selection.
-	text_edit.drag_and_drop_selection_enabled = false
-	text_edit.select_from_padding = true
-	text_edit.add_theme_constant_override("wrap_offset", 0)
-	text_edit.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	text_edit.grow_horizontal = Control.GROW_DIRECTION_END
-	text_edit.grow_vertical = Control.GROW_DIRECTION_END
 	# 标题尺寸变化时固定左上角，居中交给 Label 的文本对齐。
 	label.set_anchors_preset(Control.PRESET_TOP_LEFT)
 	label.grow_horizontal = Control.GROW_DIRECTION_END
@@ -103,32 +100,66 @@ func _ready() -> void:
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_normal_label_position = label.position
-	_normal_edit_position = text_edit.position
+	_normal_edit_position = label.position
 	# 共享固定字形缓存；控件过滤必须实际使用缩小采样的 mipmap。
 	if _canvas_font == null:
 		_canvas_font = _make_centered_canvas_font(preload("res://assets/fonts/PingFang-SC-Regular.ttf"))
 	var display_font: Font = get_meta("prepared_canvas_font", _canvas_font)
 	remove_meta("prepared_canvas_font")
 	label.add_theme_font_override("font", display_font)
-	text_edit.add_theme_font_override("font", display_font)
-	text_edit.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
 	label.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	text_edit.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_text_edit = get_node_or_null("%TextEdit") as AutoSizeTextEdit
+	if _text_edit != null:
+		_configure_text_editor()
 	_apply_appearance()
-	text_edit.set_context_menu_enabled(false)
-	text_edit.focus_exited.connect(_on_edit_focus_exited)
-	text_edit.commit_requested.connect(exit_edit_mode)
-	text_edit.cancel_requested.connect(exit_edit_mode.bind(false))
-	text_edit.text_changed.connect(_refresh_edit_layout)
-	text_edit.content_metrics_changed.connect(_refresh_edit_layout)
-	text_edit.caret_changed.connect(_restore_edit_scroll, CONNECT_DEFERRED)
-	text_edit.text_set.connect(_refresh_edit_layout)
 	visibility_changed.connect(_on_visibility_changed)
 	label.resized.connect(_queue_collision_update)
 	container_panel.resized.connect(_queue_collision_update)
-	text_edit.resized.connect(_queue_collision_update)
 	_queue_collision_update()
 
+
+
+func _ensure_text_editor() -> AutoSizeTextEdit:
+	if _text_edit != null:
+		return _text_edit
+	_text_edit = load("res://src/stage_object/entity/text_node/text_editor.res").instantiate() as AutoSizeTextEdit
+	_text_edit.name = "TextEdit"
+	_text_edit.enable_auto_size = false
+	_text_edit.add_theme_font_override("font", label.get_theme_font("font"))
+	_text_edit.add_theme_font_size_override("font_size", font_size)
+	add_child(_text_edit)
+	_text_edit.owner = self
+	_text_edit.unique_name_in_owner = true
+	_configure_text_editor()
+	_appearance_light = null
+	_apply_appearance(false)
+	return _text_edit
+
+
+
+func _configure_text_editor() -> void:
+	_text_edit.drag_and_drop_selection_enabled = false
+	_text_edit.select_from_padding = true
+	_text_edit.add_theme_constant_override("wrap_offset", 0)
+	_text_edit.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_text_edit.grow_horizontal = Control.GROW_DIRECTION_END
+	_text_edit.grow_vertical = Control.GROW_DIRECTION_END
+	_text_edit.add_theme_font_override("font", label.get_theme_font("font"))
+	_text_edit.add_theme_font_size_override("font_size", font_size)
+	_text_edit.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
+	_text_edit.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_text_edit.set_context_menu_enabled(false)
+	_text_edit.focus_exited.connect(_on_edit_focus_exited)
+	_text_edit.commit_requested.connect(exit_edit_mode)
+	_text_edit.cancel_requested.connect(exit_edit_mode.bind(false))
+	_text_edit.text_changed.connect(_refresh_edit_layout)
+	_text_edit.content_metrics_changed.connect(_refresh_edit_layout)
+	_text_edit.caret_changed.connect(_restore_edit_scroll, CONNECT_DEFERRED)
+	_text_edit.text_set.connect(_refresh_edit_layout)
+	_text_edit.resized.connect(_queue_collision_update)
+	if not _text_edit.gui_input.is_connected(_on_text_edit_gui_input):
+		_text_edit.gui_input.connect(_on_text_edit_gui_input)
+	_text_edit.hide()
 
 func _configure_edit_menu(theme_light: Variant = null) -> void:
 	# 禁用 Godot 内置 TextEdit 长菜单，改用项目自己的短菜单，避免右侧滚动条和过宽条目。
@@ -250,6 +281,7 @@ func _input(event: InputEvent) -> void:
 func enter_edit_mode() -> void:
 	if _editing:
 		return
+	_ensure_text_editor()
 	finish_drag()
 	var stage := get_parent()
 	if stage.has_method("select_ids"):
@@ -387,12 +419,14 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 	if _edit_menu != null:
 		_configure_edit_menu(light)
 	label.begin_bulk_theme_override()
-	text_edit.begin_bulk_theme_override()
+	if _text_edit != null:
+		_text_edit.begin_bulk_theme_override()
 	var foreground := Palette.neutral_text_color(background)
 	label.add_theme_color_override("font_color", Color(0, 0, 0, 0) if _editing else foreground)
 	if update_layout:
 		label.add_theme_font_size_override("font_size", font_size)
-		text_edit.add_theme_font_size_override("font_size", font_size)
+		if _text_edit != null:
+			_text_edit.add_theme_font_size_override("font_size", font_size)
 		label.autowrap_mode = TextServer.AUTOWRAP_OFF
 		label.custom_minimum_size.x = fixed_width
 		_fit_label_text_height()
@@ -417,18 +451,24 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 		style.expand_margin_right = -heading_inset
 		style.set_border_width_all(0)
 	label.add_theme_stylebox_override("normal", Corners.style(style, Corners.fitted_radius(label.size, Corners.PANEL), true, true))
-	text_edit.add_theme_color_override("font_color", foreground)
-	text_edit.add_theme_color_override("caret_color", foreground)
-	text_edit.add_theme_color_override("selection_color", Palette.color(light, "surface.selected"))
+	if _text_edit != null:
+		_text_edit.add_theme_color_override("font_color", foreground)
+	if _text_edit != null:
+		_text_edit.add_theme_color_override("caret_color", foreground)
+	if _text_edit != null:
+		_text_edit.add_theme_color_override("selection_color", Palette.color(light, "surface.selected"))
 	var edit_style := style.duplicate() as StyleBoxFlat
 	# 输入框可为光标与输入法扩展，但不接管节点的背景与轮廓。
 	edit_style.bg_color = Color.TRANSPARENT
 	edit_style.border_color = Color.TRANSPARENT
 	edit_style.set_border_width_all(0)
-	text_edit.add_theme_stylebox_override("normal", edit_style)
-	text_edit.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	if _text_edit != null:
+		_text_edit.add_theme_stylebox_override("normal", edit_style)
+	if _text_edit != null:
+		_text_edit.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	label.end_bulk_theme_override()
-	text_edit.end_bulk_theme_override()
+	if _text_edit != null:
+		_text_edit.end_bulk_theme_override()
 	if _editing:
 		_align_edit_text()
 	if update_layout:
@@ -438,13 +478,15 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 		if _container_active and _container_rect.has_area():
 			label.position = _container_rect.position
 			label.size = Vector2(_container_rect.size.x, label.get_minimum_size().y)
-			text_edit.position = label.position
+			if _text_edit != null:
+				_text_edit.position = label.position
 		_queue_collision_update()
 	_refresh_corner_styles()
 
 
 # Resizing text or a group changes geometry even when its colors stay unchanged.
 # Updating only the style radius preserves content margins and avoids relayout.
+
 func _refresh_corner_styles() -> void:
 	_refresh_control_corners(label, "normal")
 	_refresh_control_corners(container_panel, "panel")
@@ -513,7 +555,8 @@ func update_container_layout(members: Array[Entity]) -> void:
 			# 最后一个成员移出后，普通方块留在原容器标题处。
 			move_without_inertia(to_global(_container_rect.position - _normal_label_position))
 			label.position = _normal_label_position
-			text_edit.position = _normal_edit_position
+			if _text_edit != null:
+				_text_edit.position = _normal_edit_position
 			label.size = Vector2(fixed_width, 0.0)
 		_apply_appearance()
 	if not active:
@@ -543,9 +586,9 @@ func update_container_layout(members: Array[Entity]) -> void:
 	container_panel.size = bounds.size
 	label.position = bounds.position
 	label.size = Vector2(bounds.size.x, header_height)
-	text_edit.position = label.position
+	if _text_edit != null:
+		_text_edit.position = label.position
 	_update_collision_shape()
-
 
 func get_visual_rect() -> Rect2:
 	if _container_active:
@@ -555,11 +598,8 @@ func get_visual_rect() -> Rect2:
 
 
 func _fit_label_text_height() -> void:
-	# Match the native editor row height, including its trailing line spacing.
-	var row_height := ceili(label.get_theme_font("font").get_height(font_size)) + label.get_theme_constant("line_spacing")
-	label.custom_minimum_size.x = maxf(fixed_width, text_edit.measure_unwrapped(label.text).x + 62.0)
-	label.custom_minimum_size.y = row_height * maxi(1, label.text.split("\n").size()) + 20.0
-
+	var metrics := CanvasTextMetrics.measure(label.text, label.get_theme_font("font"), font_size, label.get_theme_constant("line_spacing"))
+	label.custom_minimum_size = Vector2(maxf(fixed_width, metrics.x + 62.0), metrics.y + 20.0)
 
 func _refresh_edit_layout() -> void:
 	if not _editing:

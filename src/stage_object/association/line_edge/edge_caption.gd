@@ -5,7 +5,10 @@ const Palette = preload("res://src/main/theme_palette.gd")
 
 @onready var edge: LineEdge = get_parent()
 @onready var label: Label = $Label
-@onready var editor: AutoSizeTextEdit = $Editor
+var _editor: AutoSizeTextEdit
+var editor: AutoSizeTextEdit:
+	get:
+		return _ensure_editor()
 var _editing := false
 var _last_light: Variant = null
 var _last_stroke := Color(-1, -1, -1, -1)
@@ -24,31 +27,53 @@ func _ready() -> void:
 		edge.get_parent().caption_peers_changed.connect(_queue_refresh)
 	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	label.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-	editor.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	label.gui_input.connect(_label_input)
 	label.mouse_entered.connect(_set_hovered.bind(true))
 	label.mouse_exited.connect(_set_hovered.bind(false))
-	editor.gui_input.connect(_editor_input)
-	editor.focus_exited.connect(finish_edit)
-	editor.commit_requested.connect(finish_edit)
-	editor.cancel_requested.connect(finish_edit.bind(false))
-	editor.enable_auto_size = false
-	editor.select_from_padding = true
-	editor.drag_and_drop_selection_enabled = false
-	editor.wrap_mode = TextEdit.LINE_WRAPPING_NONE
-	editor.add_theme_constant_override("wrap_offset", 0)
-	editor.custom_minimum_size = Vector2.ZERO
-	editor.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	editor.grow_horizontal = Control.GROW_DIRECTION_END
-	editor.grow_vertical = Control.GROW_DIRECTION_END
-	editor.text_changed.connect(_refresh_text)
-	editor.caret_changed.connect(_refresh_text, CONNECT_DEFERRED)
 	label.resized.connect(_on_label_resized)
 	visibility_changed.connect(_visibility_changed)
-	editor.hide()
+	_editor = get_node_or_null("Editor") as AutoSizeTextEdit
+	if _editor != null:
+		_configure_editor()
 	_update_style()
 	_refresh_text()
 
+
+
+func _ensure_editor() -> AutoSizeTextEdit:
+	if _editor != null:
+		return _editor
+	_editor = load("res://src/stage_object/association/line_edge/caption_editor.res").instantiate() as AutoSizeTextEdit
+	_editor.name = "Editor"
+	_editor.enable_auto_size = false
+	_editor.add_theme_font_override("font", label.get_theme_font("font"))
+	_editor.add_theme_font_size_override("font_size", label.get_theme_font_size("font_size"))
+	add_child(_editor)
+	_configure_editor()
+	_last_light = null
+	_update_style()
+	return _editor
+
+
+
+func _configure_editor() -> void:
+	_editor.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_editor.gui_input.connect(_editor_input)
+	_editor.focus_exited.connect(finish_edit)
+	_editor.commit_requested.connect(finish_edit)
+	_editor.cancel_requested.connect(finish_edit.bind(false))
+	_editor.enable_auto_size = false
+	_editor.select_from_padding = true
+	_editor.drag_and_drop_selection_enabled = false
+	_editor.wrap_mode = TextEdit.LINE_WRAPPING_NONE
+	_editor.add_theme_constant_override("wrap_offset", 0)
+	_editor.custom_minimum_size = Vector2.ZERO
+	_editor.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_editor.grow_horizontal = Control.GROW_DIRECTION_END
+	_editor.grow_vertical = Control.GROW_DIRECTION_END
+	_editor.text_changed.connect(_refresh_text)
+	_editor.caret_changed.connect(_refresh_text, CONNECT_DEFERRED)
+	_editor.hide()
 
 func _process(_delta: float) -> void:
 	if not is_instance_valid(edge.source) or not is_instance_valid(edge.target):
@@ -78,8 +103,8 @@ func _process(_delta: float) -> void:
 
 
 func _refresh_text() -> void:
-	if not _editing and editor.text != edge.text:
-		editor.text = edge.text
+	if not _editing and _editor != null and _editor.text != edge.text:
+		_editor.text = edge.text
 	var displayed_text := editor.text if _editing else edge.text
 	if label.text != displayed_text:
 		_layout_dirty = true
@@ -103,24 +128,30 @@ func _center_controls() -> void:
 	_centering = true
 	# TextEdit owns shaping, caret and IME widths; Label's minimum omits the
 	# caret reserve and preedit, so it cannot size the editing surface alone.
-	var content_size := label.get_minimum_size().max(editor.get_minimum_size())
-	var metrics := editor.measure_unwrapped(editor.text, true)
+	var content_size := label.get_minimum_size()
+	if _editor != null:
+		content_size = content_size.max(_editor.get_minimum_size())
+	var metrics := _editor.measure_unwrapped(_editor.text, true) if _editing else CanvasTextMetrics.measure(label.text, label.get_theme_font("font"), label.get_theme_font_size("font_size"), label.get_theme_constant("line_spacing"))
 	var margins := label.get_theme_stylebox("normal").get_minimum_size()
 	content_size.x = maxf(content_size.x, metrics.x + margins.x + 10.0)
 	content_size.y = maxf(content_size.y, ceilf(metrics.y + margins.y + 4.0))
 	label.size = content_size
 	label.position = -content_size * 0.5
-	editor.size = content_size
-	editor.position = label.position
-	editor.align_with_label(label, editor.text, true)
+	if _editor != null:
+		_editor.size = content_size
+	if _editor != null:
+		_editor.position = label.position
+	if _editor != null:
+		_editor.align_with_label(label, editor.text, true)
 	# TextEdit may scroll when a caret event precedes the deferred size update.
 	# Once the complete line fits, discard that obsolete horizontal offset.
-	editor.scroll_horizontal = 0
-	editor.scroll_vertical = 0
+	if _editor != null:
+		_editor.scroll_horizontal = 0
+	if _editor != null:
+		_editor.scroll_vertical = 0
 	edge.update_caption_collision(label.size, position, label.visible)
 	_layout_dirty = false
 	_centering = false
-
 
 func _update_style() -> void:
 	var stage := edge.get_parent() as Stage
@@ -148,20 +179,27 @@ func _update_style() -> void:
 	input_style.border_color = Color.TRANSPARENT
 	input_style.set_border_width_all(0)
 	input_style.content_margin_right -= 2.0
-	editor.add_theme_stylebox_override("normal", input_style)
-	editor.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	if _editor != null:
+		_editor.add_theme_stylebox_override("normal", input_style)
+	if _editor != null:
+		_editor.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	var foreground := Palette.neutral_text_color(background)
 	label.add_theme_color_override("font_color", Color.TRANSPARENT if _editing else foreground)
-	editor.add_theme_color_override("font_color", foreground)
-	editor.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
-	editor.add_theme_color_override("caret_color", foreground)
-	editor.add_theme_color_override("selection_color", Color(foreground, 0.18))
-	editor.add_theme_color_override("font_selected_color", foreground)
+	if _editor != null:
+		_editor.add_theme_color_override("font_color", foreground)
+	if _editor != null:
+		_editor.add_theme_constant_override("line_spacing", label.get_theme_constant("line_spacing"))
+	if _editor != null:
+		_editor.add_theme_color_override("caret_color", foreground)
+	if _editor != null:
+		_editor.add_theme_color_override("selection_color", Color(foreground, 0.18))
+	if _editor != null:
+		_editor.add_theme_color_override("font_selected_color", foreground)
 	if is_instance_valid(edge.source) and edge.source is TextNode:
 		var font: Font = edge.source.label.get_theme_font("font")
 		label.add_theme_font_override("font", font)
-		editor.add_theme_font_override("font", font)
-
+		if _editor != null:
+			_editor.add_theme_font_override("font", font)
 
 func _set_hovered(value: bool) -> void:
 	if _hovered == value:
@@ -177,6 +215,7 @@ func begin_edit() -> void:
 	var stage := edge.get_parent() as Stage
 	if stage == null or stage.history._busy:
 		return
+	_ensure_editor()
 	stage.finish_text_editing()
 	stage.finish_interaction()
 	stage.select_ids(PackedStringArray([edge.id]))
