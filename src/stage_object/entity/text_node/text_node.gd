@@ -469,6 +469,8 @@ func get_visual_outline() -> PackedVector2Array:
 
 
 static func _make_centered_canvas_font(original: Font) -> FontVariation:
+	if original.resource_path == "res://assets/fonts/PingFang-SC-Regular.ttf":
+		return CanvasTextMetrics.canvas_font()
 	var bold := FontVariation.new()
 	bold.base_font = _make_canvas_font(original)
 	# Synthetic emboldening creates overlapping contours and holes in MSDF glyphs.
