@@ -15,6 +15,10 @@ var _known_local_transform := Transform2D.IDENTITY
 
 
 func _enter_tree() -> void:
+	# Packed scenes can apply an empty exported ID after _init().
+	# Restored persistent IDs remain unchanged; new scene instances need identity.
+	if id.is_empty():
+		id = NanoID.generate()
 	# Associations keep editor geometry; entities opt into native simulation.
 	collision_layer = 0
 	collision_mask = 0
