@@ -370,6 +370,12 @@ static func connection_curve(from_rect: Rect2, to_rect: Rect2, anchors: PackedVe
 	var end_normal := anchors[3] if anchors.size() > 3 else (anchors[1] - Vector2(0.5, 0.5)) * 2.0
 	end += end_normal * end_inset
 	var delta := end - start
+	# A persisted top/bottom port can face away after the nodes move. The old
+	# zero-length handles then drew straight through the endpoint itself.
+	if delta.dot(normal) <= 0.0 or -delta.dot(end_normal) <= 0.0:
+		var route := preload("res://src/stage_object/association/line_edge/exterior_route.gd").route(from_rect, to_rect, start, end, normal, end_normal)
+		if not route.is_empty():
+			return route
 	# Scale each bend with the gap along its own outline normal. This keeps
 	# long connections flowing and preserves the shape when reversing an edge.
 	var start_handle := maxf(0.0, delta.dot(normal)) * 0.45
