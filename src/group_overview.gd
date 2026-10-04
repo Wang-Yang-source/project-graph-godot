@@ -23,6 +23,14 @@ var _summaries: Dictionary = {}
 var _refresh_key: Array = []
 var _view_rect_key: Array = []
 var _layout_revision := -1
+var _topology_revision := -1
+var _structure_generation := 0
+var _geometry_dirty := {}
+var _geometry_watchers := {}
+var _entity_topology_keys := {}
+var _bounds_order: Array = []
+var _interaction_key: Array = []
+var _interaction_revision := 0
 var _objects: Array = []
 var _groups: Array = []
 var _levels: Dictionary = {}
@@ -57,6 +65,7 @@ var _native_preview_key: Array = []
 var _native_resolutions := {}
 var _native_members := {}
 var _native_members_key: Array = []
+var _native_text_content_cache := {}
 var _exiting := false
 
 
@@ -99,6 +108,7 @@ func covers_point(world_point: Vector2) -> bool:
 func invalidate() -> void:
 	_refresh_key.clear()
 	_layout_revision = -1
+	_topology_revision = -1
 
 
 func refresh() -> void:
@@ -111,35 +121,35 @@ func refresh() -> void:
 		return
 	var camera: Camera2D = stage.camera
 	var viewport_size := get_viewport_rect().size
-	var key := [stage.layout_revision, stage.document_revision, camera.zoom, viewport_size,
+	var key := [stage.layout_revision, stage.topology_revision, stage.document_revision, stage._editing_objects.keys(), camera.zoom, viewport_size,
 		get_viewport().get_final_transform(), camera_scale_threshold, viewport_size_ratio, stage._applied_theme_light]
 	if key == _refresh_key:
 		_refresh_pan_visibility(stage)
 		return
 	_refresh_key = key
 	var changed := _layout_revision != stage.layout_revision
-	if changed:
-		_layout_revision = stage.layout_revision
+	var rebuild := _topology_revision != stage.topology_revision
+	if not rebuild:
+		for identifier in _geometry_dirty:
+			var object: StageObject = _geometry_dirty[identifier]
+			if is_instance_valid(object) and object is Entity and _entity_topology_keys.get(identifier, []) != _entity_topology_key(object):
+				rebuild = true
+				break
+	if rebuild:
+		_topology_revision = stage.topology_revision
 		_objects = stage.stage_objects()
-		var structure := []
-		for object in _objects:
-			if object is Entity:
-				structure.append([object.get_instance_id(),
-					object.container.get_instance_id() if is_instance_valid(object.container) else 0,
-					object.topic_parent.get_instance_id() if object is TextNode and is_instance_valid(object.topic_parent) else 0,
-					object._editing if object is TextNode else false, object.is_visible_in_tree()])
-			elif object is LineEdge:
-				structure.append([object.get_instance_id(),
-					object.source.get_instance_id() if is_instance_valid(object.source) else 0,
-					object.target.get_instance_id() if is_instance_valid(object.target) else 0,
-					object.get_node("Caption")._editing])
-		if structure != _structure_key:
-			_structure_key = structure
-			_build_preview_tree()
-			_membership_key.clear()
-		_refresh_preview_rects()
+		_structure_generation += 1
+		_structure_key = [stage.topology_revision, _structure_generation]
+		_build_preview_tree()
+		_sync_geometry_watchers()
+		_membership_key.clear()
+	if changed or rebuild:
+		_layout_revision = stage.layout_revision
+		_refresh_preview_rects(rebuild)
+	_geometry_dirty.clear()
+	_refresh_interaction_blocks()
 	var display_scale := snappedf(_frame_scale / maxf(camera.zoom.x, .0001), .0001)
-	var gate_input_key := [stage.layout_revision, stage.document_revision, viewport_size, display_scale, camera_scale_threshold, viewport_size_ratio]
+	var gate_input_key := [stage.layout_revision, stage.topology_revision, stage.document_revision, viewport_size, display_scale, camera_scale_threshold, viewport_size_ratio]
 	if gate_input_key != _gate_input_key:
 		_gate_input_key = gate_input_key
 		var sizes := []
@@ -172,7 +182,7 @@ func refresh() -> void:
 				_zoom_gates.append(gate)
 			_zoom_gates.sort()
 	var membership_zoom := camera.zoom.x + .00001
-	var membership := [_gate_key, _zoom_gates.bsearch(membership_zoom)]
+	var membership := [_gate_key, _zoom_gates.bsearch(membership_zoom), _interaction_revision]
 	if membership != _membership_key:
 		_membership_key = membership
 		var previous := _active.duplicate()
@@ -185,9 +195,9 @@ func refresh() -> void:
 			var identifier: int = group.get_instance_id()
 			if not group.text.strip_edges().is_empty() and not _blocked.has(identifier) and not _active_ancestors(group).is_empty():
 				_active[identifier] = group
-		if previous != _active or _preview_nodes.is_empty() or changed:
+		if previous != _active or _preview_nodes.is_empty() or changed or rebuild:
 			_refresh_membership()
-	elif changed:
+	elif changed or rebuild:
 		_link_render_key.clear()
 	for identifier in _summaries:
 		_update_summary(_preview_nodes[identifier], _summaries[identifier])
@@ -281,6 +291,18 @@ func _build_preview_tree() -> void:
 		if _entities[identifier] is TextNode:
 			_groups.append(_entities[identifier])
 	_levels = _group_levels(_objects)
+	_interaction_key.clear()
+	_cache_cover_groups()
+
+
+func _refresh_interaction_blocks() -> void:
+	var stage: Stage = get_parent()
+	var key := [stage._editing_objects.keys()]
+	if key == _interaction_key:
+		return
+	_interaction_key = key
+	_interaction_revision += 1
+	_blocked.clear()
 	for object in _objects:
 		if object is TextNode and object._editing:
 			_block_ancestors(object, _blocked)
@@ -289,29 +311,68 @@ func _build_preview_tree() -> void:
 				_block_ancestors(object.source, _blocked)
 			if is_instance_valid(object.target):
 				_block_ancestors(object.target, _blocked)
-	_cache_cover_groups()
 
+func _entity_topology_key(object: Entity) -> Array:
+	return [object.container.get_instance_id() if is_instance_valid(object.container) else 0,
+		object.topic_parent.get_instance_id() if object is TextNode and is_instance_valid(object.topic_parent) else 0,
+		object._container_active if object is TextNode else false, object.is_visible_in_tree()]
 
-func _refresh_preview_rects() -> void:
-	_group_rects.clear()
-	_entity_rects.clear()
+func _sync_geometry_watchers() -> void:
+	var live := {}
+	for object in _objects:
+		live[object.get_instance_id()] = true
+	for identifier in _geometry_watchers.keys():
+		var data: Dictionary = _geometry_watchers[identifier]
+		if live.has(identifier):
+			continue
+		if is_instance_valid(data.object) and data.object.geometry_changed.is_connected(data.callback):
+			data.object.geometry_changed.disconnect(data.callback)
+		_geometry_watchers.erase(identifier)
+		_native_text_content_cache.erase(identifier)
+	_entity_topology_keys.clear()
+	for object in _objects:
+		var identifier: int = object.get_instance_id()
+		if not _geometry_watchers.has(identifier):
+			var callback := _queue_geometry.bind(object)
+			object.geometry_changed.connect(callback)
+			_geometry_watchers[identifier] = {"object": object, "callback": callback}
+		if object is Entity:
+			_entity_topology_keys[identifier] = _entity_topology_key(object)
+	_bounds_order = _groups.duplicate()
+	_bounds_order.sort_custom(func(left: TextNode, right: TextNode) -> bool:
+		return int(_levels.get(left.get_instance_id(), 0)) < int(_levels.get(right.get_instance_id(), 0)))
+
+func _queue_geometry(object: StageObject) -> void:
+	_geometry_dirty[object.get_instance_id()] = object
+
+func _refresh_preview_rects(rebuild := true) -> void:
 	_display_rect_cache.clear()
-	for identifier in _entities:
+	var dirty := {}
+	if rebuild:
+		_group_rects.clear()
+		_entity_rects.clear()
+		for identifier in _entities:
+			dirty[identifier] = true
+	else:
+		for identifier in _geometry_dirty:
+			if _entities.has(identifier):
+				dirty[identifier] = true
+	for identifier in dirty.keys():
 		var rect: Rect2 = _entities[identifier].aabb
 		_entity_rects[identifier] = rect
 		_group_rects[identifier] = rect
-	var groups := _groups.duplicate()
-	groups.sort_custom(func(a: TextNode, b: TextNode) -> bool:
-		return int(_levels.get(a.get_instance_id(), 0)) < int(_levels.get(b.get_instance_id(), 0)))
-	for group in groups:
+		var current: int = identifier
+		while _preview_parents.has(current):
+			current = _preview_parents[current]
+			dirty[current] = true
+	for group in _bounds_order:
 		var identifier: int = group.get_instance_id()
-		if group._container_active:
+		if not dirty.has(identifier) or group._container_active:
 			continue
-		var bounds: Rect2 = _group_rects[identifier]
+		var bounds: Rect2 = _entity_rects[identifier]
 		for child in _preview_children.get(identifier, []):
 			bounds = bounds.merge(_group_rects[child])
 		_group_rects[identifier] = bounds.grow(12.0)
-
 
 func _refresh_membership() -> void:
 	_display_rect_cache.clear()
@@ -490,10 +551,13 @@ func _update_native_previews() -> void:
 		for child_id in _preview_nodes:
 			if child_id != identifier and _cover_groups.get(child_id, []).has(identifier):
 				borderless.append(child_id)
-		var content_key := [Readability.CACHE_VERSION, _native_resolutions[identifier], borderless, stage._applied_theme_light, _native_content_versions(identifier)]
+		var content_key := [Readability.CACHE_VERSION, _native_resolutions[identifier], rect.size, borderless, stage._applied_theme_light, _native_content_versions(identifier)]
 		if _native_previews.has(identifier):
 			var cached: Dictionary = _native_previews[identifier]
 			if cached.get("content_key", []) == content_key:
+				# Frozen pixels are local content; a world move updates placement only.
+				cached.rect = rect
+				cached.image.position = to_local(rect.get_center())
 				continue
 			_release_native_preview(cached)
 		var factor := float(_native_resolutions[identifier]) / maxf(rect.size.x, rect.size.y)
@@ -561,20 +625,58 @@ func _update_native_previews() -> void:
 		data.image.visible = stage.world_view_rect.intersects(data.rect, true)
 
 
+func _preview_relative_transform(item: CanvasItem, origin: Vector2) -> Transform2D:
+	var pose: Transform2D = item.get_global_transform()
+	pose.origin -= origin
+	return pose
+
+func _native_endpoint_rect(entity: Entity, other: Entity) -> Rect2:
+	if entity is TextNode and is_instance_valid(other) and other.is_inside_container(entity):
+		return entity.label.get_global_transform() * Rect2(Vector2.ZERO, entity.label.size)
+	var identifier := entity.get_instance_id()
+	return _entity_rects[identifier] if _entity_rects.has(identifier) else entity.aabb
+
+func _native_text_content(object: TextNode, control: Control) -> Array:
+	var label: Label = object.label
+	var identifier := object.get_instance_id()
+	# Persistent text/style setters invalidate local geometry. World translation
+	# leaves shape_version unchanged, so querying fonts/styles is unnecessary.
+	var key := [object.shape_version, get_parent()._applied_theme_light, object._container_active,
+		control.get_transform(), control.size, label.get_transform(), label.size]
+	var cached: Dictionary = _native_text_content_cache.get(identifier, {})
+	if cached.get("key", []) == key:
+		return cached.content
+	var content := [object.shape_version, control.get_theme_stylebox("panel" if object._container_active else "normal"), object._container_active,
+		label.text, label.get_theme_font("font"), label.get_theme_font_size("font_size"),
+		label.get_theme_color("font_color"), label.get_theme_stylebox("normal"), label.horizontal_alignment,
+		label.vertical_alignment, label.autowrap_mode, label.clip_text, label.text_overrun_behavior]
+	_native_text_content_cache[identifier] = {"key": key, "content": content}
+	return content
+
 func _native_content_versions(identifier: int) -> Array:
-	# Moving one group must not rebuild every other group's SubViewport.
-	# Use the geometry and style actually copied into this group's texture.
+	# Compare the actual copied local geometry/content, not a global pose version.
+	# Equal translation of all members preserves pixels; any relative displacement
+	# (including native collision response) still invalidates the group's texture.
 	var versions := []
+	var origin: Vector2 = _group_rects[identifier].position
 	for object in _native_members[identifier]:
 		if object is TextNode:
-			versions.append([object.get_instance_id(), object.geometry_version])
+			var control: Control = object.container_panel if object._container_active else object.label
+			var label: Label = object.label
+			versions.append([object.get_instance_id(), _preview_relative_transform(control, origin), control.size,
+				_preview_relative_transform(label, origin), label.size, _native_text_content(object, control)])
 		elif object is LegacyAsset:
-			versions.append([object.get_instance_id(), object.geometry_version, object.texture_rect.texture.get_instance_id() if object.texture_rect.texture != null else 0])
+			var image: TextureRect = object.texture_rect
+			versions.append([object.get_instance_id(), _preview_relative_transform(image, origin), image.size,
+				image.texture, image.expand_mode, image.stretch_mode, image.flip_h, image.flip_v, image.self_modulate])
 		elif object is LineEdge and is_instance_valid(object.source) and is_instance_valid(object.target):
-			versions.append([object.get_instance_id(), object.source.geometry_version, object.target.geometry_version,
+			var from := _native_endpoint_rect(object.source, object.target)
+			var to := _native_endpoint_rect(object.target, object.source)
+			from.position -= origin
+			to.position -= origin
+			versions.append([object.get_instance_id(), from, to,
 				object.display_stroke_color(), object.stroke_width, object.show_arrow, object.curve_segments, object.source_uv, object.target_uv])
 	return versions
-
 
 func _release_native_preview(data: Dictionary) -> void:
 	data["cancelled"] = true
@@ -750,11 +852,17 @@ func _refresh_restored_canvas(node: Node) -> void:
 
 func _exit_tree() -> void:
 	_exiting = true
+	for data in _geometry_watchers.values():
+		if is_instance_valid(data.object) and data.object.geometry_changed.is_connected(data.callback):
+			data.object.geometry_changed.disconnect(data.callback)
+	_geometry_watchers.clear()
+	_geometry_dirty.clear()
 	for data in _native_previews.values():
 		_release_native_preview(data)
 	_native_previews.clear()
 	_native_members.clear()
 	_native_members_key.clear()
+	_native_text_content_cache.clear()
 	for key in _suppressed.keys():
 		_restore(key)
 
