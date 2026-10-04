@@ -1,6 +1,6 @@
 # 缩放文字细节
 
-复用 Godot `Label.visible_characters` 与 `TextServer.VC_CHARS_AFTER_SHAPING`，省略低于 2 个实际屏幕像素的字形；放大到 3 像素恢复，避免阈值附近反复切换。保留 Label 的可见性、尺寸、文本整形、背景、碰撞和持久化数据。概览标题不属于此缓存。
+复用 Godot `Label.visible_characters` 与 `TextServer.VC_CHARS_AFTER_SHAPING`。基础文本节点按 master 的 5 个实际屏幕像素阈值省略与恢复字形，透明节点同步显示 20% 主题边框色填充；连线说明仍在低于 2 像素时省略、放大到 3 像素时恢复。保留 Label 的可见性、尺寸、文本整形、碰撞和持久化数据。概览标题不属于此缓存。颜色调整及当前验证结果见 [基础文本节点与 Mocha 颜色](master-text-colors.md)。
 
 相机倍率只跨越预先排序的字体阈值时才扫描标签，使用内置 `Array.sort/bsearch`；字体、尺寸、几何或编辑对象变化使缓存失效。编辑期间恢复字形，标签离开舞台或管理节点销毁时恢复原来的字符显示状态。不需要社区库或第三方依赖；这里仅适配现有标签节点。
 

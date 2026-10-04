@@ -753,8 +753,7 @@ func _update_summary(group: TextNode, panel: Panel) -> void:
 		background = Color((Palette.LATTE if light else Palette.MOCHA)["surface2"], .2)
 	var border_color := group.display_border_color()
 	var text_background := fill if fill.a == 1.0 else canvas_color
-	var brightness := .2126 * text_background.r + .7152 * text_background.g + .0722 * text_background.b
-	var foreground := Color.BLACK if brightness > 128.0 / 255.0 else Color.WHITE
+	var foreground := group.display_text_color(light)
 	var text := group.text
 	var content_key := [text, foreground]
 	var key := [revision, pixel_scale, rect, root, covered, _miniatures.has(identifier), content_key, background, border_color, group.font_size]

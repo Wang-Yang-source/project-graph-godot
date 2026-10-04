@@ -82,6 +82,7 @@ var _edit_minimum_size := Vector2.ZERO
 var _edit_origin := Vector2.ZERO
 var _appearance_light: Variant = null
 var _appearance_container := false
+var _small_text := false
 var _displayed_background := Color(-1, -1, -1, -1)
 var _collision_update_pending := false
 
@@ -421,7 +422,7 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 	label.begin_bulk_theme_override()
 	if _text_edit != null:
 		_text_edit.begin_bulk_theme_override()
-	var foreground := Palette.neutral_text_color(background)
+	var foreground := display_text_color(light)
 	label.add_theme_color_override("font_color", Color(0, 0, 0, 0) if _editing else foreground)
 	if update_layout:
 		label.add_theme_font_size_override("font_size", font_size)
@@ -434,8 +435,8 @@ func _apply_appearance(update_layout: bool = true, theme_light: Variant = null) 
 	var style := StyleBoxFlat.new()
 	style.bg_color = display_fill_color()
 	style.border_color = Palette.color(light, "border.focus") if _editing else display_border_color()
-	# Borders always use neutral contrast; legacy border fields are storage-only.
-	style.set_border_width_all(1)
+	# Match master: ordinary nodes and expanded groups use a two-world-pixel border.
+	style.set_border_width_all(2)
 	style.content_margin_left = 15
 	style.content_margin_right = 15
 	style.content_margin_top = 10
@@ -628,13 +629,31 @@ func _align_edit_text() -> void:
 	text_edit.align_with_label(label, text_edit.text, true)
 
 
-# Display-only opacity: the longest uninterrupted same-RGB branch defines the level.
-# Preserve the chosen alpha and serialized fill_color; only the fill is faded.
+# Display-only opacity for containers; ordinary nodes preserve the chosen alpha.
+# Master substitutes a faint border-colored fill only when transparent text is tiny.
 func display_fill_color() -> Color:
+	if not _container_active:
+		if fill_color.a == 0.0 and _small_text:
+			return Color(display_border_color(), 0.2)
+		return fill_color
 	var result := fill_color
 	result.a *= pow(0.78, _fill_layer - 1)
 	return result
 
+
+func display_text_color(light: bool) -> Color:
+	# Theme text replaces master's canvas inverse; opaque fills still need contrast.
+	if fill_color.a == 1.0:
+		return Palette.neutral_text_color(display_background_color(light))
+	return Palette.color(light, "canvas.node.text")
+
+
+func set_text_render_pixels(pixels: float) -> void:
+	var small := pixels < 5.0
+	if small == _small_text:
+		return
+	_small_text = small
+	_apply_appearance(false)
 
 func _update_fill_layer(members: Array[Entity]) -> void:
 	var level := 1

@@ -47,6 +47,8 @@ func _restore_label(data: Dictionary) -> void:
 		data.label.visible_characters = data.characters
 		data.label.visible_characters_behavior = data.behavior
 		data.hidden = false
+	if is_instance_valid(data.owner) and data.owner is TextNode and data.owner.is_inside_tree() and data.label == data.owner.label:
+		data.owner.set_text_render_pixels(INF)
 
 func _forget(identifier: int) -> void:
 	if _labels.has(identifier):
@@ -61,7 +63,7 @@ func _process(_delta: float) -> void:
 	var scale := maxf((_stage.get_viewport().get_final_transform() * _stage.get_global_transform_with_canvas()).get_scale().abs().x, .0001)
 	var revision: int = _stage.layout_revision
 	var editors: Array = _stage._editing_objects.keys()
-	var interval := _thresholds.bsearch(scale)
+	var interval := _thresholds.bsearch(scale, false)
 	if not _dirty and revision == _layout_revision and interval == _scale_interval and editors == _editor_key:
 		return
 	var refresh_metrics := _dirty or revision != _layout_revision
@@ -76,14 +78,20 @@ func _process(_delta: float) -> void:
 			var relative := _stage.global_transform.affine_inverse() * label.get_global_transform()
 			data.size = label.get_theme_font_size("font_size") * relative.get_scale().abs().x
 			if data.size > 0.0:
-				_thresholds.append(HIDE_BELOW_PIXELS / data.size)
-				_thresholds.append(SHOW_ABOVE_PIXELS / data.size)
+				if data.owner is TextNode:
+					_thresholds.append(5.0 / data.size)
+				else:
+					_thresholds.append(HIDE_BELOW_PIXELS / data.size)
+					_thresholds.append(SHOW_ABOVE_PIXELS / data.size)
 		var pixels: float = data.size * scale
 		var owner: StageObject = data.owner
 		var editing: bool = owner is TextNode and owner._editing
 		if owner is LineEdge:
 			editing = owner.get_node("Caption")._editing
-		var hidden: bool = not editing and (pixels < SHOW_ABOVE_PIXELS if data.hidden else pixels < HIDE_BELOW_PIXELS)
+		if owner is TextNode and label == owner.label:
+			owner.set_text_render_pixels(pixels)
+		var threshold: float = 5.0 if owner is TextNode else (SHOW_ABOVE_PIXELS if data.hidden else HIDE_BELOW_PIXELS)
+		var hidden: bool = not editing and pixels < threshold
 		if hidden == data.hidden:
 			continue
 		data.hidden = hidden
@@ -97,7 +105,7 @@ func _process(_delta: float) -> void:
 			label.visible_characters_behavior = data.behavior
 	if refresh_metrics:
 		_thresholds.sort()
-	_scale_interval = _thresholds.bsearch(scale)
+	_scale_interval = _thresholds.bsearch(scale, false)
 
 func _exit_tree() -> void:
 	for data in _labels.values():
