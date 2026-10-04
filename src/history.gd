@@ -13,6 +13,9 @@ const SnapshotDelta = preload("res://src/storage/snapshot_delta.gd")
 var _undo_stack: Array[Dictionary] = []
 var _redo_stack: Array[Dictionary] = []
 var _current_snapshot: Dictionary = { }
+# Only a fresh Stage capture (or an explicitly trusted load baseline) can reuse
+# this immutable snapshot. Generic targets have no document revision contract.
+var _current_snapshot_revision := -1
 var _transaction_snapshot: Dictionary = { }
 var _pending_commit := false
 var _busy := false
@@ -23,13 +26,18 @@ func _ready() -> void:
 	if target_root == null:
 		target_root = get_parent()
 	_current_snapshot = _capture_snapshot()
+	_current_snapshot_revision = _snapshot_revision()
 
 
 func begin_transaction() -> void:
 	if _pending_commit:
 		_finish_commit()
 	if not _busy and _transaction_snapshot.is_empty():
-		_transaction_snapshot = _capture_snapshot()
+		var revision := _snapshot_revision()
+		if revision >= 0 and revision == _current_snapshot_revision and not _current_snapshot.is_empty():
+			_transaction_snapshot = _current_snapshot
+		else:
+			_transaction_snapshot = _capture_snapshot()
 
 
 func commit(wait_for_physics := true) -> void:
@@ -64,6 +72,10 @@ func _finish_commit() -> void:
 			child.stop_throw()
 	var after := _capture_snapshot()
 	_transaction_snapshot = { }
+	# A no-op capture is still the newly synchronized baseline. Never attach its
+	# revision to an older snapshot left over from an external persistent edit.
+	_current_snapshot = after
+	_current_snapshot_revision = _snapshot_revision()
 	if _snapshots_equal(before, after):
 		return
 	var delta := SnapshotDelta.between(before, after)
@@ -72,7 +84,6 @@ func _finish_commit() -> void:
 	if _undo_stack.size() > MAX_HISTORY_SIZE:
 		_undo_stack.pop_front()
 	_redo_stack.clear()
-	_current_snapshot = after
 
 
 func undo() -> void:
@@ -91,6 +102,7 @@ func undo() -> void:
 	await _restore_snapshot(prepared.snapshot)
 	_redo_stack.append(entry)
 	_current_snapshot = prepared.snapshot
+	_current_snapshot_revision = _snapshot_revision()
 	_busy = false
 
 
@@ -110,6 +122,7 @@ func redo() -> void:
 	await _restore_snapshot(prepared.snapshot)
 	_undo_stack.append(entry)
 	_current_snapshot = prepared.snapshot
+	_current_snapshot_revision = _snapshot_revision()
 	_busy = false
 
 
@@ -124,16 +137,25 @@ func cancel_transaction() -> void:
 	_transaction_snapshot = {}
 	await _restore_snapshot(before)
 	_current_snapshot = before
+	_current_snapshot_revision = _snapshot_revision()
 	_busy = false
 
 
-func clear(snapshot: Dictionary = {}) -> void:
+func clear(snapshot: Dictionary = {}, trusted_revision: int = -1) -> void:
 	_commit_generation += 1
 	_pending_commit = false
 	_undo_stack.clear()
 	_redo_stack.clear()
 	_transaction_snapshot = { }
-	_current_snapshot = _capture_snapshot() if snapshot.is_empty() else snapshot
+	if snapshot.is_empty():
+		_current_snapshot = _capture_snapshot()
+		_current_snapshot_revision = _snapshot_revision()
+	else:
+		# Supplied values are not assumed to describe the current live document.
+		# Load callers may trust a revision immediately after their fresh capture.
+		_current_snapshot = snapshot.duplicate(true)
+		var revision := _snapshot_revision()
+		_current_snapshot_revision = revision if trusted_revision >= 0 and trusted_revision == revision else -1
 
 
 func is_transaction_active() -> bool:
@@ -152,6 +174,10 @@ func _entry_snapshot(entry: Dictionary, forward: bool) -> Dictionary:
 	if entry.has("changes"):
 		return SnapshotDelta.apply(_current_snapshot, entry, forward)
 	return {"ok":true, "snapshot":entry.after if forward else entry.before}
+
+
+func _snapshot_revision() -> int:
+	return target_root.document_revision if target_root is Stage else -1
 
 
 func _capture_snapshot() -> Dictionary:

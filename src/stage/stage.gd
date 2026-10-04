@@ -706,7 +706,7 @@ func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison:
 	membership_revision += 1
 	snapshot = document_snapshot()
 	_preserved_entries = result.get("preserved_entries", {})
-	history.clear(snapshot)
+	history.clear(snapshot, document_revision)
 	current_file_path = str(result.get("path", ""))
 	created_at = str(result.metadata.get("created_at", ""))
 	_saved_snapshot = snapshot
