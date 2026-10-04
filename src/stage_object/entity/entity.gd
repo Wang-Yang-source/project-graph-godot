@@ -24,9 +24,8 @@ extends StageObject
 		throw_damping = value
 		notify_persistent_change()
 
-const COLLISION_MARGIN := 1.0
-var _physics_margin: CollisionShape2D
-var _collision_margin_pending := false
+var _physics_outline: CollisionShape2D
+var _collision_outline_pending := false
 
 const THROW_SAMPLE_SECONDS := 0.08
 static var _native_material: PhysicsMaterial
@@ -84,26 +83,26 @@ func _ready() -> void:
 		_native_material.bounce = 0.0
 	physics_material_override = _native_material
 	_refresh_container_collisions.call_deferred()
-	geometry_changed.connect(_queue_collision_margin_update)
-	_queue_collision_margin_update()
+	geometry_changed.connect(_queue_collision_outline_update)
+	_queue_collision_outline_update()
 
 
-func _queue_collision_margin_update() -> void:
-	if _collision_margin_pending:
+func _queue_collision_outline_update() -> void:
+	if _collision_outline_pending:
 		return
-	_collision_margin_pending = true
-	_refresh_collision_margin.call_deferred()
+	_collision_outline_pending = true
+	_refresh_collision_outline.call_deferred()
 
 
-func _refresh_collision_margin() -> void:
-	_collision_margin_pending = false
+func _refresh_collision_outline() -> void:
+	_collision_outline_pending = false
 	if not is_inside_tree():
 		return
 	var bounds := Rect2()
 	var initialized := false
 	for child in get_children():
 		var source := child as CollisionShape2D
-		if source == null or source == _physics_margin or source.shape == null:
+		if source == null or source == _physics_outline or source.shape == null:
 			continue
 		if source.disabled and not source.has_meta("editor_geometry_only"):
 			continue
@@ -116,22 +115,32 @@ func _refresh_collision_margin() -> void:
 		source.set_meta("editor_geometry_only", true)
 		source.disabled = true
 	if not initialized:
-		if _physics_margin != null:
-			_physics_margin.disabled = true
+		if _physics_outline != null:
+			_physics_outline.disabled = true
 		return
-	bounds = bounds.grow(COLLISION_MARGIN)
-	if _physics_margin == null:
-		_physics_margin = CollisionShape2D.new()
-		_physics_margin.name = "PhysicsMargin"
-		_physics_margin.set_meta("physics_margin", true)
-		add_child(_physics_margin)
-	var shape := _physics_margin.shape as RectangleShape2D
-	if shape == null or shape.size != bounds.size:
-		shape = RectangleShape2D.new()
-		shape.size = bounds.size
-		_physics_margin.shape = shape
-	_physics_margin.position = bounds.get_center()
-	_physics_margin.disabled = false
+	if _physics_outline == null:
+		_physics_outline = CollisionShape2D.new()
+		_physics_outline.name = "PhysicsOutline"
+		_physics_outline.set_meta("physics_outline", true)
+		add_child(_physics_outline)
+	if has_method("get_visual_outline"):
+		var points: PackedVector2Array = Geometry2D.convex_hull(call("get_visual_outline"))
+		if points.size() > 1 and points[0].is_equal_approx(points[-1]):
+			points.resize(points.size() - 1)
+		var polygon := _physics_outline.shape as ConvexPolygonShape2D
+		if polygon == null or polygon.points != points:
+			polygon = ConvexPolygonShape2D.new()
+			polygon.points = points
+			_physics_outline.shape = polygon
+		_physics_outline.position = Vector2.ZERO
+	else:
+		var shape := _physics_outline.shape as RectangleShape2D
+		if shape == null or shape.size != bounds.size:
+			shape = RectangleShape2D.new()
+			shape.size = bounds.size
+			_physics_outline.shape = shape
+		_physics_outline.position = bounds.get_center()
+	_physics_outline.disabled = false
 
 
 func _uses_native_physics() -> bool:

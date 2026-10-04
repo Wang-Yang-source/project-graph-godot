@@ -283,6 +283,9 @@ func _refresh_selection_outlines() -> void:
 		# The expanding editor owns its focus outline; keep the physics bounds stable.
 		if object is TextNode and object.text_edit.visible:
 			continue
+		# Selection stays in the document; no translucent outer frame for entities.
+		if object is Entity:
+			continue
 		live[object.id] = true
 		var line := _selection_lines.get(object.id) as Line2D
 		if line == null:
@@ -311,9 +314,6 @@ func _refresh_selection_outlines() -> void:
 			continue
 		line.closed = true
 		line.modulate.a = 1.0
-		if object is Entity:
-			line.width = 1.0
-			line.texture = null
 		var rect: Rect2 = object.get_visual_rect() if object is TextNode else object.aabb
 		var points: PackedVector2Array = object.get_visual_outline() if object is TextNode else _rounded_selection_rect(rect, 6.0)
 		if object is TextNode and group_overview.is_active(object):
