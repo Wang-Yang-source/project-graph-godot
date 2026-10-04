@@ -150,6 +150,10 @@ static func to_snapshot(document: Dictionary, assets: Dictionary) -> Dictionary:
 	var objects := []
 	for record in document.objects:
 		var properties := {"id": JSON.from_native(record.id)}
+		if record.type == "legacy_asset":
+			# Runtime compatibility fields stay out of native records and asset blocks.
+			properties["image_base64"] = JSON.from_native("")
+			properties["image_bytes"] = PackedByteArray()
 		for name in record.properties:
 			var value: Variant = record.properties[name]
 			if value is Vector2:
