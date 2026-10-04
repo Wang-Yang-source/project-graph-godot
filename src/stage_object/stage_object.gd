@@ -8,6 +8,7 @@ extends RigidBody2D
 		id = value
 		notify_persistent_change()
 signal geometry_changed
+signal persistent_content_changed
 
 var geometry_version := 0
 # Translation changes world geometry but preserves reusable local shapes.
@@ -49,7 +50,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_LOCAL_TRANSFORM_CHANGED or what == NOTIFICATION_TRANSFORM_CHANGED:
 		if transform != _known_local_transform:
 			_known_local_transform = transform
-			notify_persistent_change()
+			notify_persistent_change(false)
 		if global_transform != _known_transform:
 			var basis_changed := global_transform.x != _known_transform.x or global_transform.y != _known_transform.y
 			_known_transform = global_transform
@@ -105,7 +106,9 @@ var aabb: Rect2:
 		return rect
 
 
-func notify_persistent_change() -> void:
+func notify_persistent_change(local_content_changed: bool = true) -> void:
+	if local_content_changed:
+		persistent_content_changed.emit()
 	var stage := get_parent()
 	if stage != null and stage.has_method("mark_document_changed"):
 		stage.call("mark_document_changed")
