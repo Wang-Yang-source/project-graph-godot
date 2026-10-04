@@ -46,7 +46,7 @@ func selection_roots() -> Array[Entity]:
 	var result: Array[Entity] = []
 	var selected: Array = target_root.call("selected_objects")
 	for object in selected:
-		if not object is Entity:
+		if not object is Entity or object._overview_physics_hidden:
 			continue
 		var nested := false
 		for other in selected:

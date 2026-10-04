@@ -182,7 +182,11 @@ func stage_objects() -> Array[StageObject]:
 
 
 func drag_entities() -> Array[Entity]:
-	return $EntityLayerMover.selection_roots()
+	var result: Array[Entity] = []
+	for object in $EntityLayerMover.selection_roots():
+		if not object._overview_physics_hidden:
+			result.append(object)
+	return result
 
 
 func selected_objects() -> Array[StageObject]:

@@ -40,11 +40,15 @@ var _rigid_follow_owner: Entity
 
 var is_dragging: bool = false:
 	set(value):
+		if value and _overview_physics_hidden:
+			return
 		is_dragging = value
 		set_process_input(value)
 		set_physics_process(is_dragging or is_throwing)
 var drag_controlled := false:
 	set(value):
+		if value and _overview_physics_hidden:
+			return
 		drag_controlled = value
 		# Only top-level gesture drivers integrate; descendants keep their offsets.
 		freeze = _overview_physics_hidden or is_instance_valid(_rigid_follow_owner)
@@ -187,6 +191,12 @@ func set_overview_physics_hidden(hidden: bool) -> void:
 	if not is_inside_tree():
 		return
 	if hidden:
+		# Folding closes an existing independent gesture once, without a throw.
+		# A zoom event must not introduce another pointer-target update.
+		if is_dragging:
+			finish_drag(false, Vector2.INF, false)
+		drag_controlled = false
+		is_dragging = false
 		stop_throw()
 		freeze = true
 		sleeping = true
@@ -224,6 +234,8 @@ func _refresh_container_collisions() -> void:
 
 
 func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> void:
+	if _overview_physics_hidden:
+		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		if event.alt_pressed:
 			return
@@ -301,6 +313,8 @@ func _on_input_event(_viewport: Node, event: InputEvent, _shape_idx: int) -> voi
 
 
 func _input(event: InputEvent) -> void:
+	if _overview_physics_hidden:
+		return
 	if event is InputEventWithModifiers and event.alt_pressed:
 		return
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
@@ -310,10 +324,11 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-func finish_drag(allow_throw := false, world_pointer := Vector2.INF) -> void:
+func finish_drag(allow_throw := false, world_pointer := Vector2.INF, update_target := true) -> void:
 	if not is_dragging:
 		return
-	_update_drag_target(world_pointer)
+	if update_target:
+		_update_drag_target(world_pointer)
 	var velocity := _pointer_velocity() if _drag_moved and allow_throw else Vector2.ZERO
 	is_dragging = false
 	for object in _drag_origins:
@@ -412,6 +427,9 @@ func _pointer_velocity() -> Vector2:
 
 
 func _start_throw(velocity: Vector2) -> void:
+	if _overview_physics_hidden:
+		stop_throw()
+		return
 	is_throwing = not velocity.is_zero_approx()
 	if is_throwing:
 		freeze = _overview_physics_hidden or is_instance_valid(_rigid_follow_owner)
