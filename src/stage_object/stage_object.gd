@@ -82,7 +82,9 @@ var aabb: Rect2:
 			if child is CollisionShape2D:
 				var collision_shape := child as CollisionShape2D
 
-				if collision_shape.shape == null:
+				if collision_shape.has_meta("physics_margin"):
+					continue
+				if collision_shape.shape == null or (collision_shape.disabled and not collision_shape.has_meta("editor_geometry_only")):
 					continue
 
 				# Native Rect2 transformation computes the same world-space AABB,

@@ -24,6 +24,10 @@ extends StageObject
 		throw_damping = value
 		notify_persistent_change()
 
+const COLLISION_MARGIN := 12.0
+var _physics_margin: CollisionShape2D
+var _collision_margin_pending := false
+
 const THROW_SAMPLE_SECONDS := 0.08
 static var _native_material: PhysicsMaterial
 var _collision_ancestors: Array[Entity] = []
@@ -80,6 +84,54 @@ func _ready() -> void:
 		_native_material.bounce = 0.0
 	physics_material_override = _native_material
 	_refresh_container_collisions.call_deferred()
+	geometry_changed.connect(_queue_collision_margin_update)
+	_queue_collision_margin_update()
+
+
+func _queue_collision_margin_update() -> void:
+	if _collision_margin_pending:
+		return
+	_collision_margin_pending = true
+	_refresh_collision_margin.call_deferred()
+
+
+func _refresh_collision_margin() -> void:
+	_collision_margin_pending = false
+	if not is_inside_tree():
+		return
+	var bounds := Rect2()
+	var initialized := false
+	for child in get_children():
+		var source := child as CollisionShape2D
+		if source == null or source == _physics_margin or source.shape == null:
+			continue
+		if source.disabled and not source.has_meta("editor_geometry_only"):
+			continue
+		var rect: Rect2 = source.transform * source.shape.get_rect()
+		if rect.size.is_zero_approx():
+			continue
+		bounds = bounds.merge(rect) if initialized else rect
+		initialized = true
+		# Keep the original geometry for picking, connections and editor bounds.
+		source.set_meta("editor_geometry_only", true)
+		source.disabled = true
+	if not initialized:
+		if _physics_margin != null:
+			_physics_margin.disabled = true
+		return
+	bounds = bounds.grow(COLLISION_MARGIN)
+	if _physics_margin == null:
+		_physics_margin = CollisionShape2D.new()
+		_physics_margin.name = "PhysicsMargin"
+		_physics_margin.set_meta("physics_margin", true)
+		add_child(_physics_margin)
+	var shape := _physics_margin.shape as RectangleShape2D
+	if shape == null or shape.size != bounds.size:
+		shape = RectangleShape2D.new()
+		shape.size = bounds.size
+		_physics_margin.shape = shape
+	_physics_margin.position = bounds.get_center()
+	_physics_margin.disabled = false
 
 
 func _uses_native_physics() -> bool:
