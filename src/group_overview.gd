@@ -54,6 +54,8 @@ var _miniatures := {}
 var _native_previews := {}
 var _native_preview_key: Array = []
 var _native_resolutions := {}
+var _native_members := {}
+var _native_members_key: Array = []
 var _exiting := false
 
 
@@ -460,6 +462,20 @@ func _update_native_previews() -> void:
 			data.image.visible = stage.world_view_rect.intersects(data.rect, true)
 		return
 	_native_preview_key = key
+	# Membership is topology, not a world-position revision.
+	var members_key := [roots, _structure_key]
+	if members_key != _native_members_key:
+		_native_members_key = members_key
+		_native_members.clear()
+		for identifier in roots:
+			_native_members[identifier] = []
+		for object in _objects:
+			var object_id: int = object.get_instance_id()
+			if _native_members.has(object_id):
+				_native_members[object_id].append(object)
+			for ancestor_id in _cover_groups.get(object_id, []):
+				if _native_members.has(ancestor_id):
+					_native_members[ancestor_id].append(object)
 	# A resolution/membership change only rebuilds affected group textures.
 	for identifier in _native_previews.keys():
 		if roots.has(identifier):
@@ -473,7 +489,7 @@ func _update_native_previews() -> void:
 		for child_id in _preview_nodes:
 			if child_id != identifier and _cover_groups.get(child_id, []).has(identifier):
 				borderless.append(child_id)
-		var content_key := [_layout_revision, stage.document_revision, _native_resolutions[identifier], borderless]
+		var content_key := [_native_resolutions[identifier], borderless, stage._applied_theme_light, _native_content_versions(identifier)]
 		if _native_previews.has(identifier):
 			var cached: Dictionary = _native_previews[identifier]
 			if cached.get("content_key", []) == content_key:
@@ -488,10 +504,8 @@ func _update_native_previews() -> void:
 		view.size = Vector2i((rect.size * factor).ceil()).max(Vector2i.ONE)
 		view.render_target_update_mode = SubViewport.UPDATE_ONCE
 		add_child(view)
-		for object in _objects:
+		for object in _native_members[identifier]:
 			var object_id: int = object.get_instance_id()
-			if object_id != identifier and not _cover_groups.get(object_id, []).has(identifier):
-				continue
 			if object is TextNode:
 				var control: Control = object.container_panel if object._container_active else object.label
 				var body := Panel.new()
@@ -540,6 +554,21 @@ func _update_native_previews() -> void:
 		_freeze_preview_texture.call_deferred(_native_previews[identifier])
 	for data in _native_previews.values():
 		data.image.visible = stage.world_view_rect.intersects(data.rect, true)
+
+
+func _native_content_versions(identifier: int) -> Array:
+	# Moving one group must not rebuild every other group's SubViewport.
+	# Use the geometry and style actually copied into this group's texture.
+	var versions := []
+	for object in _native_members[identifier]:
+		if object is TextNode:
+			versions.append([object.get_instance_id(), object.geometry_version])
+		elif object is LegacyAsset:
+			versions.append([object.get_instance_id(), object.geometry_version, object.texture_rect.texture.get_instance_id() if object.texture_rect.texture != null else 0])
+		elif object is LineEdge and is_instance_valid(object.source) and is_instance_valid(object.target):
+			versions.append([object.get_instance_id(), object.source.geometry_version, object.target.geometry_version,
+				object.display_stroke_color(), object.stroke_width, object.show_arrow, object.curve_segments, object.source_uv, object.target_uv])
+	return versions
 
 
 func _release_native_preview(data: Dictionary) -> void:
@@ -716,6 +745,11 @@ func _refresh_restored_canvas(node: Node) -> void:
 
 func _exit_tree() -> void:
 	_exiting = true
+	for data in _native_previews.values():
+		_release_native_preview(data)
+	_native_previews.clear()
+	_native_members.clear()
+	_native_members_key.clear()
 	for key in _suppressed.keys():
 		_restore(key)
 
