@@ -131,6 +131,8 @@ func can_redo() -> bool:
 
 
 func _capture_snapshot() -> Dictionary:
+	if target_root.has_method("document_snapshot"):
+		return target_root.call("document_snapshot")
 	return StageObjectRegistry.capture(target_root)
 
 

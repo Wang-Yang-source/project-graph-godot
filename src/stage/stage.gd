@@ -1,5 +1,9 @@
 class_name Stage
 extends Node2D
+const DocumentModel = preload("res://src/storage/graph_document.gd")
+var document_model := DocumentModel.new()
+var _document_model_revision := -1
+
 
 const InitialLoader = preload("res://src/project_loader.gd")
 const Palette = preload("res://src/main/theme_palette.gd")
@@ -489,13 +493,26 @@ func finish_text_editing() -> void:
 			child.exit_edit_mode()
 
 
+
+## During the all-node transition, reconcile edits once per persistent revision.
+## Saving and history consume the complete data snapshot rather than sharing nodes.
+func document_snapshot() -> Dictionary:
+	if _document_model_revision != document_revision:
+		var captured := StageObjectRegistry.capture(self)
+		var prepared: Dictionary = document_model.replace_snapshot(captured)
+		if not prepared.ok:
+			push_error("无法同步文档模型: " + str(prepared.get("error", "")))
+			return captured
+		_document_model_revision = document_revision
+	return document_model.snapshot()
+
 func save_to_file(path: String) -> bool:
 	if is_loading:
 		return false
 	finish_interaction()
 	finish_text_editing()
 	$EntityLayerMover.refresh_layout()
-	var snapshot := StageObjectRegistry.capture(self)
+	var snapshot := document_snapshot()
 	var camera_state := {
 		"position": [camera.target_position.x, camera.target_position.y],
 		"zoom": camera.target_zoom.x,
@@ -540,6 +557,10 @@ func start_initial_load(path: String) -> Node:
 
 
 func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison: Dictionary) -> void:
+	var prepared: Dictionary = document_model.replace_snapshot(snapshot)
+	if prepared.ok:
+		snapshot = document_model.snapshot()
+		_document_model_revision = document_revision
 	_preserved_entries = result.get("preserved_entries", {})
 	history.clear(snapshot)
 	current_file_path = str(result.get("path", ""))
