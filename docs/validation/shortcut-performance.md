@@ -32,6 +32,8 @@ load("res://tests/performance_release_export.gd").build("/tmp/pg-shortcuts-befor
 
 保留原始逐帧间隔和 median/P95/P99，增加超过 16.67/33.33 ms 的比例、实际采样时长、每显示帧物理步数，以及 `RenderingServer.get_frame_setup_time_cpu()` 和视口 CPU 加帧准备 CPU。原有视口 GPU 总和仍可能包含按需视口的旧读数，不能自动等同准确关键路径。
 
+环境报告增加 `physics_ticks_per_second` 与 `max_fps`。完整 Main 可能按屏幕刷新率设置物理频率，而裸 Stage 默认频率不同；比较前必须检查这些条件，不能只根据每显示帧物理步数判断成本变化。本测量不降低物理频率或画面质量。
+
 拖动开始报告目标是否处于 overview 模式、被 overview 隐藏的实体数、物理会话成员数，并记录采样期间物理会话成员峰值。用于区分展开内容和折叠预览；默认倍率不变，测量折叠场景时显式设置 `--zoom=0.05` 或 `--zoom=0.1`，再加 `--require-overview`，若目标未折叠则失败。活动 overview 的真实输入仅选择对应 summary/title，避免点击被渲染层隐藏的原生 Label；不能仅按肉眼猜测折叠状态。
 
 `press_input_ms` 记录按下事件的 parse/flush 同步耗时；直接处理器入口另记 `direct_press_handler_ms`。保留原有不投掷的测试收尾：先同步调用 `finish_drag(false)`，其耗时记作 `release_finalize_ms`，随后释放事件 parse/flush 记作 `release_input_ms`，两项独立同步调用之和为 `release_callback_total_ms`。`release_input_after_manual_finish=true` 明确说明实际拖动先已结束，不能仅用随后的空释放事件耗时证明正常释放响应。记录历史事务在收尾前、手动结束后和输入释放后的活动状态；这些字段均不含异步物理稳定等待，未把惯性持续时间算成输入回调开销，也未新增等待或改变历史取消流程。新增计时已通过解析检查，尚待主任务下一次正常测量取得数据；正常投掷释放和历史最终提交仍须单独验收。
