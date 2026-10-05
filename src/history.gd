@@ -1,0 +1,226 @@
+class_name History
+extends Node2D
+
+const MAX_HISTORY_SIZE := 100
+const SnapshotDelta = preload("res://src/storage/snapshot_delta.gd")
+
+@export var target_root: Node
+@export var velocity_threshold := 2.0
+@export var angular_velocity_threshold := 0.05
+@export var stable_physics_frames := 3
+@export var settle_timeout := 1.5
+
+var _undo_stack: Array[Dictionary] = []
+var _redo_stack: Array[Dictionary] = []
+var _current_snapshot: Dictionary = { }
+# Only a fresh Stage capture (or an explicitly trusted load baseline) can reuse
+# this immutable snapshot. Generic targets have no document revision contract.
+var _current_snapshot_revision := -1
+var _transaction_snapshot: Dictionary = { }
+var _pending_commit := false
+var _busy := false
+var _commit_generation := 0
+
+
+func _ready() -> void:
+	if target_root == null:
+		target_root = get_parent()
+	_current_snapshot = _capture_snapshot()
+	_current_snapshot_revision = _snapshot_revision()
+
+
+func begin_transaction() -> void:
+	if _pending_commit:
+		_finish_commit()
+	if not _busy and _transaction_snapshot.is_empty():
+		var revision := _snapshot_revision()
+		if revision >= 0 and revision == _current_snapshot_revision and not _current_snapshot.is_empty():
+			_transaction_snapshot = _current_snapshot
+		else:
+			_transaction_snapshot = _capture_snapshot()
+
+
+func commit(wait_for_physics := true) -> void:
+	if _busy or _pending_commit:
+		return
+	# 纯样式与方向变化无需物理收尾，也不能启动全图避让。
+	if not wait_for_physics:
+		_finish_commit()
+		return
+	_pending_commit = true
+	_commit_generation += 1
+	var generation := _commit_generation
+	await _wait_for_physics_settle()
+	if generation != _commit_generation or _busy:
+		return
+	_finish_commit()
+
+
+func _finish_commit() -> void:
+	_pending_commit = false
+	_commit_generation += 1
+	var before := _transaction_snapshot if not _transaction_snapshot.is_empty() else _current_snapshot
+	var repulsion := target_root.get_node_or_null("NodeRepulsion")
+	if repulsion != null:
+		repulsion.call("stop_motion")
+	var session := target_root.get_node_or_null("PhysicsSession")
+	if session != null:
+		session.end()
+	# 投掷与避让属于同一次事务；提交前停止剩余惯性，避免记录后继续漂移。
+	for child in target_root.get_children():
+		if child is Entity and not child.drag_controlled:
+			child.stop_throw()
+	var after := _capture_snapshot()
+	_transaction_snapshot = { }
+	# A no-op capture is still the newly synchronized baseline. Never attach its
+	# revision to an older snapshot left over from an external persistent edit.
+	_current_snapshot = after
+	_current_snapshot_revision = _snapshot_revision()
+	if _snapshots_equal(before, after):
+		return
+	var delta := SnapshotDelta.between(before, after)
+	# Non-document targets can still use the original snapshot contract.
+	_undo_stack.append(delta if delta.ok else {"before":before, "after":after})
+	if _undo_stack.size() > MAX_HISTORY_SIZE:
+		_undo_stack.pop_front()
+	_redo_stack.clear()
+
+
+func undo() -> void:
+	if _pending_commit and not _busy:
+		_finish_commit()
+	if _busy or _undo_stack.is_empty():
+		return
+	_busy = true
+	var entry: Dictionary = _undo_stack.back()
+	var prepared := _entry_snapshot(entry, false)
+	if not prepared.ok:
+		push_error(prepared.error)
+		_busy = false
+		return
+	_undo_stack.pop_back()
+	await _restore_snapshot(prepared.snapshot)
+	_redo_stack.append(entry)
+	_current_snapshot = prepared.snapshot
+	_current_snapshot_revision = _snapshot_revision()
+	_busy = false
+
+
+func redo() -> void:
+	if _pending_commit and not _busy:
+		_finish_commit()
+	if _busy or _redo_stack.is_empty():
+		return
+	_busy = true
+	var entry: Dictionary = _redo_stack.back()
+	var prepared := _entry_snapshot(entry, true)
+	if not prepared.ok:
+		push_error(prepared.error)
+		_busy = false
+		return
+	_redo_stack.pop_back()
+	await _restore_snapshot(prepared.snapshot)
+	_undo_stack.append(entry)
+	_current_snapshot = prepared.snapshot
+	_current_snapshot_revision = _snapshot_revision()
+	_busy = false
+
+
+# Cancel an in-progress gesture without consuming an undo or redo entry.
+func cancel_transaction() -> void:
+	if _busy or _transaction_snapshot.is_empty():
+		return
+	var before := _transaction_snapshot
+	_busy = true
+	_pending_commit = false
+	_commit_generation += 1
+	_transaction_snapshot = {}
+	await _restore_snapshot(before)
+	_current_snapshot = before
+	_current_snapshot_revision = _snapshot_revision()
+	_busy = false
+
+
+func clear(snapshot: Dictionary = {}, trusted_revision: int = -1) -> void:
+	_commit_generation += 1
+	_pending_commit = false
+	_undo_stack.clear()
+	_redo_stack.clear()
+	_transaction_snapshot = { }
+	if snapshot.is_empty():
+		_current_snapshot = _capture_snapshot()
+		_current_snapshot_revision = _snapshot_revision()
+	else:
+		# Supplied values are not assumed to describe the current live document.
+		# Load callers may trust a revision immediately after their fresh capture.
+		_current_snapshot = snapshot.duplicate(true)
+		var revision := _snapshot_revision()
+		_current_snapshot_revision = revision if trusted_revision >= 0 and trusted_revision == revision else -1
+
+
+func is_transaction_active() -> bool:
+	return not _busy and (_pending_commit or not _transaction_snapshot.is_empty())
+
+
+func can_undo() -> bool:
+	return not _busy and (_pending_commit or not _undo_stack.is_empty())
+
+
+func can_redo() -> bool:
+	return not _redo_stack.is_empty()
+
+
+func _entry_snapshot(entry: Dictionary, forward: bool) -> Dictionary:
+	if entry.has("changes"):
+		return SnapshotDelta.apply(_current_snapshot, entry, forward)
+	return {"ok":true, "snapshot":entry.after if forward else entry.before}
+
+
+func _snapshot_revision() -> int:
+	return target_root.document_revision if target_root is Stage else -1
+
+
+func _capture_snapshot() -> Dictionary:
+	if target_root.has_method("document_snapshot"):
+		return target_root.call("document_snapshot")
+	return StageObjectRegistry.capture(target_root)
+
+
+func _restore_snapshot(snapshot: Dictionary) -> void:
+	if target_root.has_method("restore_document_snapshot"):
+		await target_root.call("restore_document_snapshot", snapshot)
+	else:
+		await StageObjectRegistry.restore(target_root, snapshot)
+
+
+func _wait_for_physics_settle() -> void:
+	var elapsed := 0.0
+	var stable := 0
+	while elapsed < settle_timeout and stable < stable_physics_frames:
+		await get_tree().physics_frame
+		elapsed += 1.0 / Engine.physics_ticks_per_second
+		var repulsion := target_root.get_node_or_null("NodeRepulsion")
+		var moving: bool = repulsion != null and repulsion.has_method("has_pending_motion") and repulsion.call("has_pending_motion")
+		for child in target_root.get_children():
+			if child is RigidBody2D and (child.linear_velocity.length() > velocity_threshold or absf(child.angular_velocity) > angular_velocity_threshold):
+				moving = true
+				break
+		stable = 0 if moving else stable + 1
+
+
+func _snapshots_equal(a: Dictionary, b: Dictionary) -> bool:
+	return a == b # Native deep Dictionary/Array equality; no archive-sized JSON copies.
+
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if target_root is CanvasItem and not target_root.is_visible_in_tree():
+		return
+	var focus_owner := get_viewport().gui_get_focus_owner()
+	if focus_owner is TextEdit or focus_owner is LineEdit or focus_owner is SpinBox:
+		return
+	if event.is_action_pressed("history_undo", false, true):
+		undo()
+		get_viewport().set_input_as_handled()
+	elif event.is_action_pressed("history_redo", false, true):
+		redo()
+		get_viewport().set_input_as_handled()

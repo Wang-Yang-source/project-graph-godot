@@ -1,0 +1,16 @@
+{
+  "version": "3.11",
+  "release": "3.fc44",
+  "platform": "linux-x86_64",
+  "license": "Zlib AND CPL-1.0",
+  "packages": [
+    {
+      "url": "https://kojipkgs.fedoraproject.org/packages/mingw-nsis/3.11/3.fc44/x86_64/mingw-nsis-base-3.11-3.fc44.x86_64.rpm",
+      "sha256": "34011fab9c67352a48af473bb705f82ca5495b92251ac7d3eb1c3a11c0ea5e30"
+    },
+    {
+      "url": "https://kojipkgs.fedoraproject.org/packages/mingw-nsis/3.11/3.fc44/noarch/mingw32-nsis-3.11-3.fc44.noarch.rpm",
+      "sha256": "3cc8f40409a019d3d45bdf49a8bc41e4b0e8d13ce7f3a6a63478d35d14330c0f"
+    }
+  ]
+}

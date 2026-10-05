@@ -1,118 +1,56 @@
-## Project Background
+# AGENTS.md
 
-Github Repository: `graphif/project-graph`
+本文件适用于整个仓库，除非未来在更深层目录增加明确的局部规则。
 
-Project Graph 是一款桌面级节点图绘制工具，用于头脑风暴、知识图谱、项目规划等场景的可视化思考。
+## Godot 与 MCP 操作规范
 
-## Tech-stack
+- 严禁直接读取或写入任何 `.tscn` 文件；包括使用命令行、文本编辑器、脚本或其他文件工具间接处理。
+- 严禁使用 computer use 操作 Godot Editor。
+- 所有由 Godot 识别的项目文件必须通过名称以 `mcp__godot_mcp__` 开头的工具处理，包括但不限于：
+  - `project.godot`
+  - `export_presets.cfg`
+  - `*.gd`
+  - `*.tscn`
+  - `*.tres`
+  - `*.res`
+  - `*.godot`
+  - `*.import`
+  - Godot 资源目录中的其他相关文件
+- `addons/godot_mcp` 等第三方或外部目录默认只读。只有用户明确要求时，才允许修改其中内容。
+- 如果当前环境没有可用的 `mcp__godot_mcp__` 工具，必须立即停止相关操作，并提示用户参考 `CONTRIBUTING.md`；不得自行改用其他方式绕过本规则。
+- 普通非 Godot 文件可以按常规文本工具处理。若无法判断某个文件是否属于 Godot 项目文件，应按 Godot 文件处理并暂停确认。
 
-- React (TypeScript) + Tauri (Rust)
-- Vite + pnpm (monorepo) + Nx
-- Canvas 2D
-- shadcn/ui + Tailwind CSS + 自研子窗口系统
-- Jotai
+## 功能交付与手动验证
 
-Rust 主要负责本地文件等系统能力；绝大部分业务逻辑在前端。
+- 用户要求新增或修改功能时，交付说明必须包含由用户手动执行的验证方法。
+- 验证方法至少要说明：
+  - 如何触发该功能；
+  - 应观察到的现象或结果；
+  - 失败时应重点检查的行为。
+- 不得擅自运行验证、测试或 Godot Editor；只有用户另行明确授权时才可以执行。
+- 修改说明必须明确列出：实际改动、使用的 MCP 工具类别，以及尚未执行的验证步骤。
 
-## Structure
+## 工作范围与文件层级
 
-### Application
+- 本文件位于仓库根目录，默认递归约束整个仓库。
+- `CONTRIBUTING.md` 是后续贡献流程文档的占位入口；当前为空，不预设额外流程。
+- 当前不创建额外的子目录级 `AGENTS.md`，避免产生规则覆盖歧义。
 
-- Frontend Vite project: `/app`
-- Rust / Tauri: `/app/src-tauri`
-- UI components: `/app/src/components`
-- i18n locales: `/app/src/locales`
-- React state (Jotai 等): `/app/src/state.tsx` 及附近
+## 代码设计理念总结
 
-### `app/src/core`（核心业务）
+- **节点树优先**：所有可见内容和临时反馈都应通过 Godot 节点表达，例如 `Line2D`、`Polygon2D`、`CollisionShape2D`；禁止绕过节点树直接调用底层绘制 API。
+- **工具与数据对象分离**：`LineEdgeCreator`、`StageObjectSlicer` 等负责交互反馈的工具节点，与 `TextNode`、`LineEdge` 等可保存的舞台对象分离。
+- **场景声明结构，脚本实现行为**：`.tscn` 负责节点组成、资源和连接；`.gd` 负责交互逻辑、计算和状态变化。脱离舞台对象存在的工具逻辑应放在 `src` 下的脚本中，并作为节点加入对应场景。
+- **世界坐标优先**：舞台对象、相机、碰撞和连线计算以世界坐标为基础，视口只负责显示和输入承载。
+- **物理系统参与编辑体验**：舞台对象基于 `RigidBody2D`，拖拽和避让通过物理属性实现；涉及物理变化的历史提交应等待状态稳定。
+- **数据驱动与可扩展**：对象类型通过场景注册表管理，属性通过导出变量和反射发现，序列化使用稳定的类型名、对象 ID 和延迟引用解析，以便扩展新的节点和关系类型。
+- **事务式历史记录**：拖拽、文本编辑、创建连线和割线删除等完整用户操作都应以事务方式进入撤销/重做系统，避免把一次操作拆成多个不可预测的历史步骤。
 
-| 路径                              | 职责                                                                            |
-| --------------------------------- | ------------------------------------------------------------------------------- |
-| `Project.tsx`                     | 单个工程/项目实例的入口与生命周期                                               |
-| `Tab*.ts(x)` / `TabWorkspace.tsx` | 标签页与工作区                                                                  |
-| `loadAllServices.tsx`             | 注册/加载全部服务                                                               |
-| `algorithm/`                      | 通用算法与几何工具                                                              |
-| `stage/`                          | 舞台：`Camera`、`Canvas`、舞台对象（`stageObject`）、舞台管理（`stageManager`） |
-| `render/`                         | 渲染：`canvas2d`、`svg`、`3d`、`domElement`                                     |
-| `service/`                        | 业务服务（见下）                                                                |
-| `extension/`                      | 扩展系统运行时与 API                                                            |
-| `fileSystemProvider/`             | 文件系统抽象（草稿/本地文件等）                                                 |
-| `interfaces/`                     | 核心接口（如 `Service`）                                                        |
-| `subWindowOpen*.ts`               | 子窗口打开方式                                                                  |
 
-`service/` 主要子目录：
 
-- `controlService/` — 输入控制、快捷键、框选、自动布局等
-- `dataFileService/` — 工程文件读写
-- `dataGenerateService/` — 数据生成
-- `dataManageService/` — 内容搜索、复制、AI、节点工具等
-- `feedbackService/` — 特效、音效、舞台样式、颜色
-- `Settings.tsx` 等 — 设置、主题、菜单、教程等全局服务
-
-### Packages（`/packages`）
-
-前端复用的开源/内部库，例如：
-
-- `@graphif/serializer` — 实例序列化
-- `@graphif/shapes` — 可序列化图形
-- `@graphif/data-structures` — 可序列化数据结构
-- `extprg` / `extprg-types` / `create-extprg` — 扩展工具链与类型
-
-### Agent skills
-
-具体工作流见 `.agents/skills/`：
-
-- `type-check` — TypeScript 类型检查（**改代码后用这个，不要 build**）
-- `create-keybind` — 新增/修改快捷键
-- `create-setting-item` — 新增/修改设置项
-- `shadcn` / `ui` — UI 组件
-- `suggest-lucide-icons` — 图标建议
-
-## Locales (`app/src/locales`)
-
-| 文件         | 说明                                                               |
-| ------------ | ------------------------------------------------------------------ |
-| `en.yml`     | 英文（手写维护）                                                   |
-| `zh_CN.yml`  | 简体中文（手写维护）                                               |
-| `zh_TW.yml`  | 普通繁体中文 — **由 `zh_CN.yml` 自动生成（OpenCC）**，**不要手改** |
-| `zh_TWC.yml` | 接地气繁体中文 — **手写维护，不是自动生成**                        |
-| `id.yml`     | 印尼语（手写维护）                                                 |
-
-新增文案时：改 `en.yml` / `zh_CN.yml`（及需要时的 `zh_TWC.yml`、`id.yml`），**不要编辑 `zh_TW.yml`**。
-
-## Coding guidelines
-
-- 正确性与清晰度优先；性能除非明确要求，否则次之。
-- 不要写组织性/总结性注释；仅在「为什么这样写」不直观时解释 why。
-- 优先在已有文件中实现功能；仅在新的逻辑组件时新建文件，避免拆成大量小文件。
-- 目录内使用 `something.tsx`，不要用单独的 `index.tsx`。
-- 错误处理（**前端**）：
-  - 不要静默吞掉错误：禁止 `catch {}` 或仅 `console.error` 后忽略
-  - 能不 catch 就不 catch，让调用方处理
-  - 需要忽略时用对话框提示用户（用户看不到控制台）
-  - 错误应向上传到 DOM（如 `window`），由 `ErrorHandler` 展示友好对话框
-  - 反例：`try { something() } catch (e) { console.error(e) }` → 直接 `something()`
-- 错误处理（**Rust / Tauri 命令**）：命令在运行中不能让进程因未捕获错误闪退，须在函数内妥善处理错误并返回给前端。
-- UI：优先复用 shadcn 与 `.agents/skills/ui` 中的约定（`Dialog`、`toast` 等）。
-- 快捷键 / 设置：分别遵循 `create-keybind`、`create-setting-item` skill。
-
-## Commands
-
-包管理：`pnpm`。常用：
-
-- 开发：`pnpm dev`
-- Lint：`pnpm lint` / `pnpm lint:fix`
-- 测试：`pnpm test`（vitest）
-- 类型检查：**使用 `type-check` skill**（`pnpm --filter @graphif/project-graph type-check`）
-
-**禁止** Agent 运行 `build` / `build:ci` / `build:no-tauri` / `tauri build` 等构建命令。验证改动用 type-check（及必要的 lint/test），不要 build。
-
-## Agent constraints
-
-- **依赖 API / 用法**：禁止用 shell 在 `node_modules` 里搜索、翻源码或类型定义。需要了解第三方库时，读取该项目的官方文档（优先 `llms.txt`，例如 `https://<pkg-docs>/llms.txt`），或使用已有 skill；不要 `grep` / `find` / `cat` `node_modules/**`。
-- **实现方式**：禁止用 `python`、`python3`、`node -e`、`node --eval`、内联 shell 脚本等做文本处理或批量改文件。应直接用读/写/编辑文件的工具（Read / Write / Edit 等）完成；需要多文件改动时逐个编辑，不要写临时脚本。
-- **构建**：禁止 build（见上）；验证用 type-check skill。
-
-## Commit Message
-
-使用 [Conventional Commits](https://www.conventionalcommits.org/)，例如：`feat: ...`、`fix: ...`、`refactor: ...`。
+- 当前是独立实验性代理内核；不要将计划功能描述为已实现。
+- 每个独立功能或修复一个原子提交；提交前运行相关测试、构建和格式检查。
+- 新网络功能应有本地端到端验证，覆盖断开、超时和资源清理等实际失败路径。
+- 新增能力或补齐缺陷前，先核查标准库及社区现成库；优先复用，只补必要的项目适配，不重复实现已有通用能力。没有适用库时先记录候选与不采用理由。
+- 第三方依赖按需引入并固定版本与哈希，核实许可证、平台、I/O 模型和编译器兼容性。
+- 不提交真实订阅、节点凭证、私钥或个人代理配置。

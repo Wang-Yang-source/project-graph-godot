@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="2400" viewBox="-960 -1200 1920 2400" role="img" aria-labelledby="title desc"><title id="title">文献综述示例模板</title><desc id="desc">论文启发的 Project Graph 风格设计预览，不是运行截图。</desc>
+<defs><pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" fill="#45475a" opacity=".38"/></pattern></defs><rect x="-960" y="-1200" width="1920" height="2400" fill="#1e1e2e"/><rect x="-960" y="-1200" width="1920" height="2400" fill="url(#grid)"/>
+<text x="-840" y="-1120" fill="#cba6f7" font-family="sans-serif" font-size="18" letter-spacing="5">PROJECT GRAPH / PRACTICAL MAPS</text>
+<path d="M -490 0 C -400 0, -380 -585, -290 -585" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -715, 235 -715" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -585, 235 -585" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -585 C 111.25 -585, 133.75 -455, 235 -455" fill="none" stroke="#89b4fa" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 -195, -290 -195" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -325, 235 -325" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -195, 235 -195" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 -195 C 111.25 -195, 133.75 -65, 235 -65" fill="none" stroke="#94e2d5" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 195, -290 195" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 65, 235 65" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 195, 235 195" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 195 C 111.25 195, 133.75 325, 235 325" fill="none" stroke="#cba6f7" stroke-width="2.5" opacity=".78"/>
+<path d="M -490 0 C -400 0, -380 585, -290 585" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 455, 235 455" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 585, 235 585" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<path d="M 10 585 C 111.25 585, 133.75 715, 235 715" fill="none" stroke="#fab387" stroke-width="2.5" opacity=".78"/>
+<g><rect x="-665" y="-1062" width="1250" height="144" rx="18" fill="#313244" stroke="#585b70" stroke-width="1.5"/>
+<text x="-40" y="-1018.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="38">01 · RESEARCH</text>
+<text x="-40" y="-961.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="38">文献综述 · 示例模板</text>
+</g>
+<g><rect x="-665" y="-895" width="1250" height="80" rx="18" fill="#1e1e2e" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="-855" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">围绕问题组织证据，把结论与适用边界一起留下。</text>
+</g>
+<g><rect x="-810" y="-90" width="320" height="180" rx="18" fill="#45475a" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="-650" y="-24" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="32">思维导图</text>
+<text x="-650" y="24" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="32">在哪些任务中有效？</text>
+</g>
+<g><rect x="-290" y="-627" width="300" height="84" rx="18" fill="#313244" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="-140" y="-585" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">写作组织</text>
+</g>
+<g><rect x="235" y="-765" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-731.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">研究对象</text>
+<text x="460" y="-698.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">45 名外语学习者</text>
+</g>
+<g><rect x="235" y="-635" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-601.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">观察结果</text>
+<text x="460" y="-568.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">个人制图组内容与组织评分较好</text>
+</g>
+<g><rect x="235" y="-505" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#89b4fa" stroke-width="1.5"/>
+<text x="460" y="-471.5" dominant-baseline="central" text-anchor="middle" fill="#89b4fa" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">证据边界</text>
+<text x="460" y="-438.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">准实验；不等于所有写作都有效</text>
+</g>
+<g><rect x="-290" y="-237" width="300" height="84" rx="18" fill="#313244" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="-140" y="-195" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">知识回忆</text>
+</g>
+<g><rect x="235" y="-375" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="-341.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">研究对象</text>
+<text x="460" y="-308.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">131 名一年级医学生</text>
+</g>
+<g><rect x="235" y="-245" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="-211.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">观察结果</text>
+<text x="460" y="-178.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">未发现短期回忆的组间优势</text>
+</g>
+<g><rect x="235" y="-115" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#94e2d5" stroke-width="1.5"/>
+<text x="460" y="-81.5" dominant-baseline="central" text-anchor="middle" fill="#94e2d5" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">证据边界</text>
+<text x="460" y="-48.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">短时训练；不能推出长期效果</text>
+</g>
+<g><rect x="-290" y="153" width="300" height="84" rx="18" fill="#313244" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="-140" y="195" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">文献管理</text>
+</g>
+<g><rect x="235" y="15" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="48.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">组织单位</text>
+<text x="460" y="81.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">问题 → 主题 → 证据 → 来源</text>
+</g>
+<g><rect x="235" y="145" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="178.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">工作流程</text>
+<text x="460" y="211.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">PDF 批注进入导图与草稿</text>
+</g>
+<g><rect x="235" y="275" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#cba6f7" stroke-width="1.5"/>
+<text x="460" y="308.5" dominant-baseline="central" text-anchor="middle" fill="#cba6f7" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">证据边界</text>
+<text x="460" y="341.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">系统演示；非效率对照实验</text>
+</g>
+<g><rect x="-290" y="543" width="300" height="84" rx="18" fill="#313244" stroke="#fab387" stroke-width="1.5"/>
+<text x="-140" y="585" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="28">继续追问</text>
+</g>
+<g><rect x="235" y="405" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="438.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">比较条件</text>
+<text x="460" y="471.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">制图、普通笔记与主动回忆</text>
+</g>
+<g><rect x="235" y="535" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="568.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">时间成本</text>
+<text x="460" y="601.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">制图耗时是否抵消收益？</text>
+</g>
+<g><rect x="235" y="665" width="450" height="100" rx="18" fill="#1e1e2e" stroke="#fab387" stroke-width="1.5"/>
+<text x="460" y="698.5" dominant-baseline="central" text-anchor="middle" fill="#fab387" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">研究空白</text>
+<text x="460" y="731.5" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="22">长期保持与不同任务的差异</text>
+</g>
+<g><rect x="-680" y="850" width="1280" height="100" rx="18" fill="#181825" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="885.75" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">来源：Beel 2011 · Sebit &amp; Yıldız 2020 · D’Antoni 2010</text>
+<text x="-40" y="914.25" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">论文链接与证据范围见配套调查；分支为项目改编。</text>
+</g>
+<g><rect x="-680" y="995" width="1280" height="70" rx="18" fill="#181825" stroke="#45475a" stroke-width="1.5"/>
+<text x="-40" y="1030" dominant-baseline="central" text-anchor="middle" fill="#cdd6f4" font-family="'PingFang SC','Noto Sans CJK SC','Microsoft YaHei',sans-serif" font-size="19">使用方法：先另存为副本 · 双击改写节点 · Tab 扩展子主题 · 保留证据与来源</text>
+</g>
+</svg>

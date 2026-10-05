@@ -1,0 +1,878 @@
+class_name Stage
+extends Node2D
+const DocumentModel = preload("res://src/storage/graph_document.gd")
+var document_model := DocumentModel.new()
+var _document_model_revision := -1
+var _document_views := PackedStringArray()
+var _document_sync_depth := 0
+var _document_sync_error := ""
+var _saved_document: Dictionary = {}
+
+
+const InitialLoader = preload("res://src/project_loader.gd")
+const Palette = preload("res://src/main/theme_palette.gd")
+
+signal file_error(message: String)
+signal file_saved(path: String)
+signal file_loaded(path: String)
+signal selection_changed
+signal document_changed
+signal context_requested(world_position: Vector2)
+signal view_changed(world_rect: Rect2, zoom_steps: float)
+signal caption_peers_changed
+
+@onready var history: History = %History
+@onready var camera: Camera2D = $Camera
+@onready var group_overview: Node2D = $GroupOverview
+
+var is_loading := false
+var loading_file_path := ""
+var current_file_path := ""
+var created_at := ""
+var _preserved_entries: Dictionary = {}
+var layout_revision := 0
+var document_revision := 0
+var _dirty_revision := -1
+var _cached_dirty := false
+var _editing_objects: Dictionary = {}
+var membership_revision := 0
+var topology_revision := 0
+var _counts_revision := -1
+var _counts := Vector2i.ZERO
+var _last_view_key: Array = []
+var world_view_rect := Rect2()
+var selected_ids := PackedStringArray()
+var _saved_snapshot: Dictionary = {}
+var _saved_comparison_state: Dictionary = {}
+var _selection_lines: Dictionary = {}
+var _marquee_start := Vector2.ZERO
+var _marquee_active := false
+var _marquee_toggle := false
+var _marquee_original_ids := PackedStringArray()
+var _stroke: PenStroke
+var _mouse_resize_active := false
+var _mouse_resize_remaining := 0.0
+var _mouse_resize_ids := PackedStringArray()
+
+
+
+func _ready() -> void:
+	var physics_session := preload("res://src/stage/physics_session.gd").new()
+	physics_session.name = "PhysicsSession"
+	add_child(physics_session)
+	var text_detail := preload("res://src/stage/text_detail.gd").new()
+	text_detail.name = "TextDetail"
+	add_child(text_detail)
+	process_priority = 1
+	child_entered_tree.connect(_on_stage_child_changed)
+	child_exiting_tree.connect(_on_stage_child_changed)
+	_saved_snapshot = StageObjectRegistry.capture(self)
+	document_model.replace_snapshot(_saved_snapshot)
+	_saved_document = document_model.native_document()
+	_saved_comparison_state = StageObjectRegistry.comparison_state(self)
+	_dirty_revision = -1
+	_cached_dirty = false
+	apply_preferences()
+
+
+func _unhandled_input(event: InputEvent) -> void:
+	if history._busy:
+		get_viewport().set_input_as_handled()
+		return
+	if event is InputEventWithModifiers and event.alt_pressed:
+		return
+	if not event is InputEventMouseButton or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var world_position: Vector2 = get_canvas_transform().affine_inverse() * event.position
+	var mode := int(GraphPreferences.value("left_mode"))
+	if mode == 1:
+		history.begin_transaction()
+		_stroke = StageObjectRegistry.get_scene("pen_stroke").instantiate() as PenStroke
+		_stroke.position = world_position
+		add_child(_stroke)
+		_stroke.points = PackedVector2Array([Vector2.ZERO])
+	elif mode == 0 and edge_at(world_position) != null:
+		var edge := edge_at(world_position)
+		select_object_from_click(edge, event)
+		if event.double_click:
+			edge.enter_edit_mode()
+	elif mode == 0 and event.double_click:
+		var node := create_text_node("...", world_position)
+		node.enter_edit_mode()
+	elif mode == 0:
+		_marquee_original_ids = selected_ids.duplicate()
+		_marquee_start = world_position
+		_marquee_active = true
+		_marquee_toggle = event.ctrl_pressed or event.meta_pressed
+		if not _marquee_toggle:
+			select_ids(PackedStringArray())
+	else:
+		return
+	get_viewport().set_input_as_handled()
+
+
+func _input(event: InputEvent) -> void:
+	if history._busy:
+		get_viewport().set_input_as_handled()
+		return
+	if $EntityLayerMover.handle_input(event):
+		get_viewport().set_input_as_handled()
+		return
+	if _stroke != null and is_instance_valid(_stroke):
+		if event is InputEventMouseMotion:
+			var point := _stroke.to_local(get_global_mouse_position())
+			if _stroke.points[-1].distance_squared_to(point) > 4.0:
+				var points := _stroke.points
+				points.append(point)
+				_stroke.points = points
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			finish_interaction()
+			get_viewport().set_input_as_handled()
+	elif _marquee_active:
+		if event is InputEventMouseMotion:
+			_update_marquee()
+			get_viewport().set_input_as_handled()
+		elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and not event.pressed:
+			_finish_marquee()
+			get_viewport().set_input_as_handled()
+
+
+func _process(_delta: float) -> void:
+	if _mouse_resize_active:
+		_mouse_resize_remaining -= _delta
+		if _mouse_resize_remaining <= 0.0:
+			finish_mouse_resize()
+	var canvas := get_global_transform_with_canvas()
+	var viewport_rect := get_viewport_rect()
+	var view_key := [canvas, viewport_rect]
+	if view_key != _last_view_key:
+		_last_view_key = view_key
+		world_view_rect = get_canvas_transform().affine_inverse() * viewport_rect
+		var scale := maxf(canvas.get_scale().x, 0.01)
+		view_changed.emit(world_view_rect.grow(64.0 / scale), log(scale) / log(2.0) * 16.0)
+	_refresh_selection_outlines()
+	if (_marquee_active or is_instance_valid(_stroke)) and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		finish_interaction()
+
+
+func create_text_node(content: String, world_position: Vector2, record_history := true) -> TextNode:
+	if record_history:
+		history.begin_transaction()
+	var node: TextNode = StageObjectRegistry.get_scene("text_node").instantiate()
+	node.use_theme_border = true
+	node.text = content
+	node.position = world_position
+	add_child(node)
+	apply_object_preferences(node)
+	select_ids(PackedStringArray([node.id]))
+	if record_history:
+		$NodeRepulsion.begin_local_edit([node])
+		history.commit()
+	document_changed.emit()
+	return node
+
+
+func stage_objects() -> Array[StageObject]:
+	var result: Array[StageObject] = []
+	for child in get_children():
+		if child is StageObject and not child.is_queued_for_deletion():
+			result.append(child)
+	return result
+
+
+func drag_entities() -> Array[Entity]:
+	var result: Array[Entity] = []
+	for object in $EntityLayerMover.selection_roots():
+		if not object._overview_physics_hidden:
+			result.append(object)
+	return result
+
+
+func selected_objects() -> Array[StageObject]:
+	var result: Array[StageObject] = []
+	if not is_loading and not selected_ids.is_empty() and _document_sync_depth == 0:
+		var live := _live_document_ids()
+		if not Array(selected_ids).all(func(identifier): return live.has(identifier)):
+			materialize_document_ids(selected_ids)
+	if selected_ids.is_empty():
+		return result
+	for object in stage_objects():
+		if selected_ids.has(object.id):
+			result.append(object)
+	return result
+
+
+func select_ids(ids: PackedStringArray) -> void:
+	selected_ids = ids
+	selection_changed.emit()
+
+
+func select_object(object: StageObject, toggle := false) -> void:
+	if toggle:
+		var index := selected_ids.find(object.id)
+		if index >= 0:
+			selected_ids.remove_at(index)
+		else:
+			selected_ids.append(object.id)
+	elif not selected_ids.has(object.id):
+		selected_ids = PackedStringArray([object.id])
+	selection_changed.emit()
+
+
+# Pointer modifiers share one rule for native labels, physics picks and previews.
+func select_object_from_click(object: StageObject, event: InputEventMouseButton) -> void:
+	if event.ctrl_pressed or event.meta_pressed:
+		select_ids(PackedStringArray([object.id]))
+	elif event.shift_pressed:
+		var ids := selected_ids.duplicate()
+		if not ids.has(object.id):
+			ids.append(object.id)
+		select_ids(ids)
+	else:
+		select_object(object)
+
+
+func is_overview_hidden(object: StageObject) -> bool:
+	return group_overview != null and group_overview.is_hidden(object)
+
+
+func select_all() -> void:
+	document_snapshot()
+	select_ids(document_model.ids())
+
+
+func cancel_marquee_selection() -> void:
+	if not _marquee_active:
+		return
+	_marquee_active = false
+	$SelectionOverlay/Marquee.hide()
+	$SelectionOverlay/Marquee.clear_points()
+	select_ids(_marquee_original_ids)
+
+
+func _update_marquee() -> void:
+	var end := get_global_mouse_position()
+	var rect := Rect2(_marquee_start, end - _marquee_start).abs()
+	var line := $SelectionOverlay/Marquee as Line2D
+	# Bake the world rectangle into screen-sized Line2D geometry. A two-world-
+	# unit stroke becomes subpixel when zoomed out and can lose whole sides.
+	var canvas := (line.get_parent() as Node2D).get_global_transform_with_canvas()
+	var basis := Transform2D(canvas.x, canvas.y, Vector2.ZERO)
+	if is_zero_approx(basis.determinant()):
+		line.hide()
+		return
+	line.transform = basis.affine_inverse()
+	line.closed = true
+	line.width = 4.0 # Two-pixel core plus the antialiasing coverage fringe.
+	line.antialiased = true
+	line.texture = preload("res://assets/line_antialiasing.res")
+	line.texture_mode = Line2D.LINE_TEXTURE_TILE
+	line.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	var corners := preload("res://src/main/continuous_corners.gd").outline(rect, preload("res://src/main/continuous_corners.gd").NODE)
+	line.points = line.global_transform.affine_inverse() * corners
+	line.show()
+
+
+func _finish_marquee() -> void:
+	var end := get_global_mouse_position()
+	var rect := Rect2(_marquee_start, end - _marquee_start).abs()
+	_marquee_active = false
+	$SelectionOverlay/Marquee.hide()
+	if rect.size.length_squared() < 9.0:
+		return
+	var ids := selected_ids.duplicate() if _marquee_toggle else PackedStringArray()
+	for object in stage_objects():
+		if is_overview_hidden(object):
+			continue
+		var hit := rect.encloses(object.aabb) if end.x >= _marquee_start.x else rect.intersects(object.aabb)
+		if hit:
+			var index := ids.find(object.id)
+			if _marquee_toggle and index >= 0:
+				ids.remove_at(index)
+			else:
+				ids.append(object.id)
+	select_ids(ids)
+
+
+func _refresh_selection_outlines() -> void:
+	var live := {}
+	for object in selected_objects():
+		if is_overview_hidden(object):
+			continue
+		# The expanding editor owns its focus outline; keep the physics bounds stable.
+		if object is TextNode and object._editing:
+			continue
+		# Selection stays in the document; no translucent outer frame for entities.
+		if object is Entity:
+			continue
+		live[object.id] = true
+		var line := _selection_lines.get(object.id) as Line2D
+		if line == null:
+			line = Line2D.new()
+			line.default_color = Color("#cba6f7")
+			line.closed = true
+			line.antialiased = true
+			line.texture = preload("res://assets/line_antialiasing.res")
+			line.texture_mode = Line2D.LINE_TEXTURE_TILE
+			line.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+			line.joint_mode = Line2D.LINE_JOINT_ROUND
+			$SelectionOverlay.add_child(line)
+			_selection_lines[object.id] = line
+		line.scale = Vector2.ONE / maxf(get_global_transform_with_canvas().get_scale().x, 0.01)
+		# Three-pixel core plus the texture coverage fringe.
+		line.width = 5.0
+		line.default_color = Palette.color(_applied_theme_light == 1, "canvas.selection")
+		if object is LineEdge:
+			line.closed = false
+			line.width = object.line.width * object.line.get_global_transform_with_canvas().get_scale().x + 4.0
+			line.modulate.a = 0.45
+			var edge_points := PackedVector2Array()
+			for point in object.line.points:
+				edge_points.append(line.to_local(object.line.to_global(point)))
+			line.points = edge_points
+			continue
+		line.closed = true
+		line.modulate.a = 1.0
+		var rect: Rect2 = object.get_visual_rect() if object is TextNode else object.aabb
+		var points: PackedVector2Array = object.get_visual_outline() if object is TextNode else _rounded_selection_rect(rect, 6.0)
+		if object is TextNode and group_overview.is_active(object):
+			points = group_overview.outline_for(object)
+		for i in points.size():
+			var world_point := object.to_global(points[i]) if object is TextNode else points[i]
+			points[i] = line.to_local(world_point)
+		line.points = points
+	for id in _selection_lines.keys():
+		if not live.has(id):
+			_selection_lines[id].queue_free()
+			_selection_lines.erase(id)
+
+
+func delete_objects(objects: Array[StageObject], preserve_contents := false) -> void:
+	var identifiers := PackedStringArray()
+	for object in objects:
+		identifiers.append(object.id)
+	delete_document_ids(identifiers, preserve_contents)
+
+func delete_document_ids(identifiers: PackedStringArray, preserve_contents := false) -> bool:
+	if identifiers.is_empty():
+		return false
+	$EntityLayerMover.cancel()
+	finish_text_editing()
+	history.begin_transaction()
+	var result: Dictionary = document_model.remove_ids(identifiers, preserve_contents)
+	if not result.ok:
+		file_error.emit(result.get("error", "无法删除对象"))
+		history._transaction_snapshot = {}
+		return false
+	var snapshot_data: Dictionary = document_model.snapshot()
+	snapshot_data.erase("camera")
+	await restore_document_snapshot(snapshot_data)
+	select_ids(PackedStringArray())
+	history.commit(not preserve_contents)
+	document_changed.emit()
+	return true
+
+
+func finish_interaction() -> void:
+	finish_mouse_resize()
+	$EntityLayerMover.cancel()
+	$LineEdgeCreator.cancel_drag()
+	$StageObjectSlicer._cancel_slice()
+	if is_instance_valid(_stroke):
+		if _stroke.points.size() < 2:
+			remove_child(_stroke)
+			_stroke.queue_free()
+		_stroke = null
+		history.commit()
+	if _marquee_active:
+		_finish_marquee()
+	for object in stage_objects():
+		if object is Entity:
+			object.finish_drag()
+
+
+func cancel_current_interaction() -> void:
+	if history._busy:
+		return
+	if _marquee_active:
+		cancel_marquee_selection()
+		return
+	if $StageObjectSlicer._is_slicing:
+		$StageObjectSlicer._cancel_slice()
+		return
+	var active: bool = is_instance_valid(_stroke) or $LineEdgeCreator._source != null or $EntityLayerMover._active
+	for object in stage_objects():
+		if object is Entity and object.is_dragging:
+			active = true
+	if active:
+		# History marks itself busy before restore stops the gesture, preventing commits.
+		history.cancel_transaction()
+		return
+	if camera.is_panning:
+		camera.is_panning = false
+		camera.velocity = Vector2.ZERO
+		camera.target_position = camera.global_position
+		return
+	select_ids(PackedStringArray())
+
+
+func is_dirty() -> bool:
+	if is_loading:
+		return false
+	for object in _editing_objects.values():
+		if not is_instance_valid(object):
+			continue
+		if object is LineEdge and object.is_text_dirty():
+			return true
+		if object is TextNode and object._editing and object.text_edit.text != object.text:
+			return true
+	if _dirty_revision != document_revision:
+		# Polling the UI must not serialize a live physical transaction. Keep the
+		# comparison revision pending so cancel/undo can restore a clean state.
+		if history.is_transaction_active():
+			return true
+		document_snapshot()
+		_cached_dirty = not _document_sync_error.is_empty() or document_model.native_document() != _saved_document
+		_dirty_revision = document_revision
+	return _cached_dirty
+
+
+func apply_object_preferences(object: StageObject, theme_light: Variant = null) -> void:
+	if object is TextNode:
+		object._apply_appearance(false, theme_light)
+	if object is LineEdge:
+		object.apply_theme(Palette.is_light(str(GraphPreferences.value("theme"))) if theme_light == null else bool(theme_light))
+	if object is Entity:
+		object.collision_mask = 1
+
+
+# -1 表示尚未同步；后台标签页在重新显示前调用 apply_theme。
+var _applied_theme_light := -1
+
+
+func apply_theme(light: bool) -> void:
+	if _applied_theme_light == int(light):
+		return
+	_applied_theme_light = int(light)
+	var grid_material := $CanvasLayer/Grid.material as ShaderMaterial
+	if grid_material != null:
+		grid_material.set_shader_parameter("bg_color", Palette.color(light, "surface.canvas"))
+		grid_material.set_shader_parameter("grid_color", Palette.color(light, "border.subtle"))
+	for object in stage_objects():
+		if object is TextNode:
+			object._apply_appearance(false, light)
+		elif object is LineEdge:
+			object.apply_theme(light)
+	$SelectionOverlay/Marquee.default_color = Palette.color(light, "canvas.selection")
+
+
+func apply_preferences(theme_light: Variant = null) -> void:
+	var light: bool = Palette.is_light(str(GraphPreferences.value("theme"))) if theme_light == null else bool(theme_light)
+	camera.max_speed = float(GraphPreferences.value("camera_speed"))
+	var grid_material := $CanvasLayer/Grid.material as ShaderMaterial
+	if grid_material != null:
+		grid_material.set_shader_parameter("show_horizontal", GraphPreferences.value("grid_h"))
+		grid_material.set_shader_parameter("show_vertical", GraphPreferences.value("grid_v"))
+		grid_material.set_shader_parameter("show_dots", GraphPreferences.value("grid_dots"))
+	for object in stage_objects():
+		apply_object_preferences(object, light)
+	# 完整设置更新也覆盖刚加载、恢复的对象。
+	_applied_theme_light = -1
+	apply_theme(light)
+
+
+func focus_objects(objects: Array[StageObject]) -> void:
+	if objects.is_empty():
+		return
+	var bounds := objects[0].aabb
+	for object in objects:
+		bounds = bounds.merge(object.aabb)
+	camera.target_position = bounds.get_center()
+	var available := Vector2(get_viewport_rect().size) - Vector2(160, 140)
+	var factor := minf(available.x / maxf(bounds.size.x, 1.0), available.y / maxf(bounds.size.y, 1.0))
+	factor = clampf(factor, camera.min_zoom, camera.max_zoom)
+	camera.target_zoom = Vector2.ONE * factor
+	camera.velocity = Vector2.ZERO
+
+
+func finish_text_editing() -> void:
+	for child in get_children():
+		if child is TextNode or child is LineEdge:
+			child.exit_edit_mode()
+
+
+
+## During the all-node transition, reconcile edits once per persistent revision.
+## Saving and history consume the complete data snapshot rather than sharing nodes.
+func document_snapshot() -> Dictionary:
+	var captured := StageObjectRegistry.capture(self)
+	var prepared: Dictionary = document_model.reconcile_views(captured, _document_views)
+	if not prepared.ok:
+		_document_sync_error = str(prepared.get("error", "无法同步文档模型"))
+		push_error("无法同步文档模型: " + _document_sync_error)
+		# Never save a partial view capture when reconciliation fails.
+		return document_model.snapshot()
+	_document_sync_error = ""
+	_document_views = _live_document_ids()
+	_document_model_revision = document_revision
+	var snapshot_data: Dictionary = document_model.snapshot()
+	snapshot_data.erase("camera")
+	return snapshot_data
+
+func _live_document_ids() -> PackedStringArray:
+	var identifiers := PackedStringArray()
+	for object in stage_objects():
+		identifiers.append(object.id)
+	return identifiers
+
+
+## Recycle presentation without deleting its record or entering history.
+
+func release_document_views(identifiers: PackedStringArray) -> void:
+	document_snapshot()
+	_document_sync_depth += 1
+	for object in stage_objects():
+		if identifiers.has(object.id):
+			remove_child(object)
+			object.queue_free()
+			var index := _document_views.find(object.id)
+			if index >= 0:
+				_document_views.remove_at(index)
+	_document_sync_depth -= 1
+	topology_revision += 1
+	group_overview.invalidate()
+
+
+## Dependencies use stable IDs. Containers include their full membership while
+## the existing native container presenter still derives geometry from children.
+
+func _document_view_closure(identifiers: PackedStringArray) -> PackedStringArray:
+	var chosen := {}
+	var queue := Array(identifiers)
+	var cursor := 0
+	while cursor < queue.size():
+		var identifier: String = queue[cursor]
+		cursor += 1
+		if chosen.has(identifier):
+			continue
+		var record: Dictionary = document_model.record(identifier)
+		if record.is_empty():
+			continue
+		chosen[identifier] = true
+		queue.append_array(record.references.values())
+		if record.type == "venn_region":
+			queue.append_array(Array(record.properties.get("member_ids", PackedStringArray())))
+		queue.append_array(Array(document_model.children(identifier)))
+	return PackedStringArray(chosen.keys())
+
+func materialize_document_ids(identifiers: PackedStringArray) -> void:
+	var wanted := _document_view_closure(identifiers)
+	var by_id := {}
+	for object in stage_objects():
+		by_id[object.id] = object
+	var references: Array[Dictionary] = []
+	var snapshot_data: Dictionary = document_model.snapshot()
+	_document_sync_depth += 1
+	for record in snapshot_data.objects:
+		var identifier: String = JSON.to_native(record.properties.id)
+		if not wanted.has(identifier) or by_id.has(identifier):
+			continue
+		var object := StageObjectRegistry.instantiate_record(record, references)
+		if object == null:
+			file_error.emit("无法准备文档对象: " + identifier)
+			continue
+		if object is TextNode and has_meta("load_canvas_font"):
+			object.set_meta("prepared_canvas_font", get_meta("load_canvas_font"))
+		add_child(object)
+		apply_object_preferences(object)
+		by_id[identifier] = object
+	for reference in references:
+		reference.object.set(reference.property, by_id.get(reference.reference_id))
+	StageObjectRegistry.resolve_object_references(self, by_id)
+	_document_sync_depth -= 1
+	topology_revision += 1
+	_document_views = _live_document_ids()
+	$EntityLayerMover.reset_tracking()
+	group_overview.invalidate()
+
+func restore_document_snapshot(snapshot_data: Dictionary) -> void:
+	finish_interaction()
+	var session := get_node_or_null("PhysicsSession")
+	if session != null:
+		session.end()
+	var previous: Dictionary = document_model.native_document()
+	var wanted := _live_document_ids()
+	var prepared: Dictionary = document_model.replace_snapshot(snapshot_data)
+	if not prepared.ok:
+		push_error(prepared.get("error", "无法恢复文档"))
+		return
+	var old_records := {}
+	for record in previous.objects:
+		old_records[record.id] = record
+	for identifier in document_model.ids():
+		if old_records.get(identifier) != document_model.record(identifier) and not wanted.has(identifier):
+			wanted.append(identifier)
+	var closure := _document_view_closure(wanted)
+	var visible_records := []
+	for record in snapshot_data.objects:
+		if closure.has(str(JSON.to_native(record.properties.id))):
+			visible_records.append(record)
+	_document_sync_depth += 1
+	await StageObjectRegistry.restore(self, {"objects": visible_records})
+	_document_sync_depth -= 1
+	topology_revision += 1
+	_document_views = _live_document_ids()
+	document_revision += 1
+	layout_revision += 1
+	_document_model_revision = document_revision
+	membership_revision += 1
+	group_overview.invalidate()
+
+func save_to_file(path: String) -> bool:
+	if is_loading:
+		return false
+	finish_interaction()
+	finish_text_editing()
+	$EntityLayerMover.refresh_layout()
+	var snapshot := document_snapshot()
+	if not _document_sync_error.is_empty():
+		file_error.emit(_document_sync_error)
+		return false
+	var camera_state := {
+		"position": [camera.target_position.x, camera.target_position.y],
+		"zoom": camera.target_zoom.x,
+	}
+	var rects := {}
+	for object in stage_objects():
+		if not object is LineEdge:
+			rects[object.id] = object.aabb
+	var geometry := {"layout_version": 1, "font_fingerprint": CanvasTextMetrics.fingerprint(), "rects": rects}
+	var result := ProjectFile.save(path, snapshot, camera_state, created_at, _preserved_entries, geometry)
+	if not result.ok:
+		file_error.emit(result.error)
+		return false
+	current_file_path = path
+	created_at = result.created_at
+	_preserved_entries = result.get("preserved_entries", _preserved_entries)
+	_saved_snapshot = snapshot.duplicate(true)
+	_saved_document = document_model.native_document()
+	_saved_comparison_state = StageObjectRegistry.comparison_state(self)
+	_dirty_revision = -1
+	_cached_dirty = false
+	file_saved.emit(path)
+	return true
+
+
+func load_from_file(path: String) -> bool:
+	var loader := start_initial_load(path)
+	return await loader.completed if loader != null else false
+
+
+func start_initial_load(path: String) -> Node:
+	if is_loading or history._busy:
+		return null
+	finish_interaction()
+	finish_text_editing()
+	$PhysicsSession.end()
+	is_loading = true
+	loading_file_path = path
+	history._busy = true
+	var loader := InitialLoader.new()
+	get_tree().root.add_child(loader)
+	loader.start(self, path)
+	return loader
+
+
+func complete_initial_load(result: Dictionary, snapshot: Dictionary, comparison: Dictionary) -> void:
+	topology_revision += 1
+	var prepared: Dictionary
+	if result.has("validated_document"):
+		prepared = document_model.replace_document(result.validated_document, result.validated_assets)
+	else:
+		prepared = document_model.replace_snapshot(result.get("graph", snapshot))
+	if not prepared.ok:
+		file_error.emit(prepared.get("error", "无法建立文档模型"))
+		return
+	var by_id := {}
+	for object in stage_objects():
+		by_id[object.id] = object
+	var slot := 0
+	for identifier in document_model.ids():
+		if not by_id.has(identifier):
+			continue
+		while slot < get_child_count() and not get_child(slot) is StageObject:
+			slot += 1
+		if by_id[identifier].get_index() != slot:
+			move_child(by_id[identifier], slot)
+		slot += 1
+	_document_views = _live_document_ids()
+	membership_revision += 1
+	snapshot = document_snapshot()
+	_preserved_entries = result.get("preserved_entries", {})
+	history.clear(snapshot, document_revision)
+	current_file_path = str(result.get("path", ""))
+	created_at = str(result.metadata.get("created_at", ""))
+	_saved_snapshot = snapshot
+	_saved_document = document_model.native_document()
+	_saved_comparison_state = comparison
+	_dirty_revision = -1
+	_cached_dirty = false
+	select_ids(PackedStringArray())
+	file_loaded.emit(current_file_path)
+
+
+func _decode_vector2(value):
+	if not value is Array or value.size() != 2:
+		return null
+	if not(value[0] is float or value[0] is int) or not(value[1] is float or value[1] is int):
+		return null
+	return Vector2(float(value[0]), float(value[1]))
+
+
+func _rounded_selection_rect(rect: Rect2, _radius: float) -> PackedVector2Array:
+	# Selection and transient previews follow the node's continuous outline.
+	return preload("res://src/main/continuous_corners.gd").outline(rect, preload("res://src/main/continuous_corners.gd").PANEL)
+
+
+func edge_at(world_point: Vector2) -> LineEdge:
+	if group_overview != null and group_overview.covers_point(world_point):
+		return null
+	var nearest: LineEdge
+	var distance := 7.0 / maxf(camera.zoom.x, 0.01)
+	for object in stage_objects():
+		if object is LineEdge and object.is_visible_in_tree() and not is_overview_hidden(object):
+			var candidate: float = object.distance_to_point(world_point)
+			if candidate < distance:
+				distance = candidate
+				nearest = object
+	return nearest
+
+
+func can_connect_entities(from: Entity, to: Entity) -> bool:
+	return is_instance_valid(from) and is_instance_valid(to) and from != to and from.get_parent() == self and to.get_parent() == self and from.container == to.container
+
+
+func connect_entities(from: Entity, to: Entity) -> LineEdge:
+	if not can_connect_entities(from, to):
+		return null
+	for object in stage_objects():
+		if object is LineEdge and object.source == from and object.target == to:
+			return object
+	var edge := StageObjectRegistry.get_scene("line_edge").instantiate() as LineEdge
+	edge.use_theme_color = true
+	edge.source = from
+	edge.target = to
+	add_child(edge)
+	return edge
+
+
+func _on_stage_child_changed(child: Node) -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
+	if child is StageObject:
+		if not _document_views.has(child.id):
+			_document_views.append(child.id)
+		_editing_objects.erase(child.get_instance_id())
+		membership_revision += 1
+		topology_revision += 1
+		layout_revision += 1
+		document_revision += 1
+
+
+func mark_geometry_changed(object: StageObject) -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
+	if object is Entity:
+		layout_revision += 1
+
+
+func mark_topology_changed() -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
+	topology_revision += 1
+	layout_revision += 1
+
+
+func mark_document_changed() -> void:
+	if is_loading or _document_sync_depth > 0:
+		return
+	document_revision += 1
+
+
+func set_editor_active(object: StageObject, active: bool) -> void:
+	if active:
+		_editing_objects[object.get_instance_id()] = object
+	else:
+		_editing_objects.erase(object.get_instance_id())
+
+
+func object_counts() -> Vector2i:
+	if _counts_revision == membership_revision:
+		return _counts
+	# Merge membership only. Inactive records are still document objects, while
+	# disappeared tracked views and newly created live objects affect the count.
+	var types := {}
+	for identifier in document_model.ids():
+		var record: Dictionary = document_model.record(identifier)
+		types[identifier] = record.type
+	var live := {}
+	for object in stage_objects():
+		live[object.id] = true
+		types[object.id] = StageObjectRegistry._type_for(object)
+	for identifier in _document_views:
+		if not live.has(identifier):
+			types.erase(identifier)
+	_counts = Vector2i.ZERO
+	for type in types.values():
+		if type in ["entity", "text_node", "pen_stroke", "legacy_asset"]:
+			_counts.x += 1
+		elif type in ["association", "line_edge", "venn_region"]:
+			_counts.y += 1
+	_counts_revision = membership_revision
+	return _counts
+
+
+func resize_text_at(world_point: Vector2, steps: float) -> void:
+	if is_loading or history._busy or is_zero_approx(steps):
+		return
+	var hovered: Entity = $LineEdgeCreator._get_entity_at(world_point)
+	if not hovered is TextNode:
+		return
+	var targets: Array[TextNode] = []
+	if selected_ids.has(hovered.id):
+		for object in selected_objects():
+			if object is TextNode:
+				targets.append(object as TextNode)
+	else:
+		targets.append(hovered as TextNode)
+	var ids := PackedStringArray()
+	var changed: Array[TextNode] = []
+	var factor: float = pow(2.0, steps * 0.5)
+	for node in targets:
+		ids.append(node.id)
+		if clampi(roundi(node.font_size * factor), 8, 512) != node.font_size:
+			changed.append(node)
+	if changed.is_empty():
+		return
+	if _mouse_resize_active and ids != _mouse_resize_ids:
+		finish_mouse_resize()
+	if not _mouse_resize_active:
+		finish_text_editing()
+		history.begin_transaction()
+		_mouse_resize_active = true
+		_mouse_resize_ids = ids
+	for node in changed:
+		node.font_size = clampi(roundi(node.font_size * factor), 8, 512)
+		$NodeRepulsion.begin_local_edit([node], false)
+	_mouse_resize_remaining = 0.25
+	document_changed.emit()
+
+
+func finish_mouse_resize() -> void:
+	if not _mouse_resize_active:
+		return
+	_mouse_resize_active = false
+	_mouse_resize_remaining = 0.0
+	_mouse_resize_ids.clear()
+	history.commit()
